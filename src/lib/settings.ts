@@ -21,7 +21,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   searchIndexing: true,
 };
 
-export function getUserSettings(user: User): UserSettings {
+export function getUserSettings(user: Pick<User, "settings">): UserSettings {
   return { ...DEFAULT_SETTINGS, ...(user.settings ?? {}) };
 }
 
@@ -60,7 +60,7 @@ export function defaultLoginLog(): LoginSession[] {
   ];
 }
 
-export function getLoginLog(user: User): LoginSession[] {
+export function getLoginLog(user: Pick<User, "loginLog">): LoginSession[] {
   if (user.loginLog && user.loginLog.length > 0) return user.loginLog;
   return defaultLoginLog();
 }
