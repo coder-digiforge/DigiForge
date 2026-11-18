@@ -1,16 +1,16 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Paperclip, Send, X } from "lucide-react";
+import { Paperclip, SendHorizonal, X } from "lucide-react";
 import { sendMessageAction } from "@/app/actions/marketplace";
-import { Button, Input } from "@/components/ui";
 
 const MAX_FILE_MB = 12;
 
 export function MessageComposer({ threadId }: { threadId: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [focused, setFocused] = useState(false);
+  const [hasText, setHasText] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function clearFile() {
@@ -18,23 +18,29 @@ export function MessageComposer({ threadId }: { threadId: string }) {
     if (fileRef.current) fileRef.current.value = "";
   }
 
+  const canSend = hasText || Boolean(fileName);
+
   return (
     <form
       action={sendMessageAction}
       encType="multipart/form-data"
-      className="border-t border-border bg-panel px-4 py-3 md:px-5"
+      className="border-t border-border/60 bg-[color-mix(in_srgb,var(--panel)_92%,transparent)] px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-md"
       onSubmit={() => {
         setError(null);
-        setTimeout(() => clearFile(), 0);
+        setHasText(false);
+        setTimeout(() => {
+          clearFile();
+          if (inputRef.current) inputRef.current.value = "";
+        }, 0);
       }}
     >
       <input type="hidden" name="threadId" value={threadId} />
 
-      {error && <p className="mb-2 text-xs text-danger">{error}</p>}
+      {error && <p className="mb-2 px-1 text-xs text-danger">{error}</p>}
 
       {fileName && (
-        <div className="mb-2 flex items-center gap-2">
-          <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-panel-soft px-3 py-1 text-xs text-text">
+        <div className="mb-2 flex items-center gap-2 px-1">
+          <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-panel-soft px-3 py-1.5 text-xs text-text">
             <Paperclip size={12} className="shrink-0 text-accent" />
             <span className="truncate">{fileName}</span>
             <button
@@ -49,14 +55,14 @@ export function MessageComposer({ threadId }: { threadId: string }) {
         </div>
       )}
 
-      <div className="flex w-full items-center gap-2">
+      <div className="flex w-full items-end gap-2">
         <button
           type="button"
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-border text-muted transition-colors hover:border-accent/50 hover:text-accent"
+          className="mb-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[color-mix(in_srgb,var(--accent)_18%,transparent)] text-accent transition active:scale-95"
           aria-label="Прикрепить файл"
           onClick={() => fileRef.current?.click()}
         >
-          <Paperclip size={18} />
+          <Paperclip size={18} strokeWidth={2} />
         </button>
         <input
           ref={fileRef}
@@ -78,26 +84,32 @@ export function MessageComposer({ threadId }: { threadId: string }) {
             setFileName(file.name);
           }}
         />
-        <div
-          className={`min-w-0 flex-1 rounded-full border transition-[border-color,box-shadow,background] duration-200 ${
-            focused
-              ? "border-accent bg-[#241c16] shadow-[0_0_0_3px_rgba(224,168,107,0.28)]"
-              : "border-border bg-[#16110e]"
-          }`}
-        >
-          <Input
+
+        <div className="min-w-0 flex-1 rounded-[22px] border border-border bg-[#16110e] px-3.5 py-2">
+          <input
+            ref={inputRef}
             name="body"
-            placeholder="Написать сообщение…"
-            className="!min-w-0 !w-full !rounded-full !border-transparent !bg-transparent !text-[#f6f1e8] !caret-[#e0a86b] !outline-none focus:!border-transparent focus:!outline-none focus-visible:!outline-none focus:!ring-0 focus-visible:!ring-0"
+            placeholder="Сообщение"
             autoComplete="off"
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            style={{ color: "#f6f1e8", WebkitTextFillColor: "#f6f1e8", caretColor: "#e0a86b" }}
+            enterKeyHint="send"
+            className="df-imessage-input w-full bg-transparent text-[16px] leading-5 text-text outline-none placeholder:text-muted"
+            style={{ color: "var(--text)", WebkitTextFillColor: "var(--text)", caretColor: "var(--accent)" }}
+            onChange={(e) => setHasText(e.target.value.trim().length > 0)}
           />
         </div>
-        <Button type="submit" className="!h-11 !shrink-0 !rounded-full !px-4" aria-label="Отправить">
-          <Send size={16} />
-        </Button>
+
+        <button
+          type="submit"
+          disabled={!canSend}
+          aria-label="Отправить"
+          className={`mb-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full transition active:scale-95 ${
+            canSend
+              ? "bg-[#0a84ff] text-white shadow-[0_0_16px_rgba(10,132,255,0.35)]"
+              : "bg-panel-soft text-muted"
+          }`}
+        >
+          <SendHorizonal size={16} strokeWidth={2.25} />
+        </button>
       </div>
     </form>
   );

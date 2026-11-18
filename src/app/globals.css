@@ -17,7 +17,8 @@
   --menu-bg: #1c140ff5;
   --radius: 16px;
   --radius-sm: 12px;
-  --header-h: 68px;
+  --header-h: 56px;
+  --mobile-nav-h: calc(58px + env(safe-area-inset-bottom, 0px));
   --df-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --df-duration: 280ms;
   --df-glow: 0 0 24px rgba(224, 168, 107, 0.28);
@@ -99,6 +100,43 @@ body {
     transform var(--df-duration) var(--df-ease);
 }
 
+@media (min-width: 640px) {
+  :root {
+    --header-h: 64px;
+  }
+}
+
+@media (min-width: 768px) {
+  :root {
+    --header-h: 68px;
+  }
+}
+
+.df-imessage-input {
+  border: 0;
+  box-shadow: none;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.df-scroll-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.df-scroll-hide::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.df-imessage-input:focus,
+.df-imessage-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 .df-input {
   width: 100%;
   background: var(--input-bg);
@@ -108,11 +146,20 @@ body {
   caret-color: var(--accent);
   -webkit-text-fill-color: var(--text);
   color-scheme: dark;
-  padding: 0.75rem 1rem;
+  padding: 0.85rem 1rem;
   font: inherit;
+  font-size: 16px; /* avoid iOS zoom on focus */
+  line-height: 1.4;
   outline: none;
   box-shadow: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+@media (min-width: 768px) {
+  .df-input {
+    font-size: 0.9375rem;
+    padding: 0.75rem 1rem;
+  }
 }
 
 [data-theme="light"] .df-input {

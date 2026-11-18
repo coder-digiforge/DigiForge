@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
+import {
+  forwardRef,
+  type ButtonHTMLAttributes,
+  type ComponentProps,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type TextareaHTMLAttributes,
+} from "react";
 
 export function Logo({
   compact = false,
@@ -43,16 +50,18 @@ export function ButtonLink({
   variant = "primary",
   className = "",
   children,
+  ...props
 }: {
   href: string;
   variant?: "primary" | "ghost";
   className?: string;
   children: ReactNode;
-}) {
+} & Omit<ComponentProps<typeof Link>, "href" | "className" | "children">) {
   return (
     <Link
       href={href}
       className={`df-btn ${variant === "primary" ? "df-btn-primary" : "df-btn-ghost"} ${className}`}
+      {...props}
     >
       {children}
     </Link>
@@ -97,16 +106,16 @@ export function PageTitle({
   className?: string;
 }) {
   return (
-    <div className={`mb-6 flex flex-wrap items-start justify-between gap-4 ${className}`}>
+    <div className={`mb-5 flex flex-wrap items-start justify-between gap-3 sm:mb-6 sm:gap-4 ${className}`}>
       <div className="min-w-0">
-        <h1 className="font-[family-name:var(--font-syne)] text-[28px] font-bold leading-[34px] text-[#f5e6c8]">
+        <h1 className="font-[family-name:var(--font-syne)] text-[24px] font-bold leading-tight tracking-[-0.02em] text-[#f5e6c8] sm:text-[28px] sm:leading-[34px]">
           {title}
         </h1>
         {subtitle && (
           <p className="mt-1.5 text-sm font-medium text-muted">{subtitle}</p>
         )}
       </div>
-      {action}
+      {action ? <div className="w-full sm:w-auto">{action}</div> : null}
     </div>
   );
 }

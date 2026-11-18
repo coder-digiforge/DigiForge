@@ -67,7 +67,7 @@ function NavGroup({ title, items }: { title: string; items: Item[] }) {
 export function ClientSidebar() {
   const fresh = whatsNewFreshCount();
   return (
-    <aside className="df-panel h-fit w-full shrink-0 p-3 md:w-60">
+    <aside className="df-panel !hidden h-fit w-full shrink-0 p-3 lg:!block lg:w-60">
       <NavGroup
         title="Рабочая среда"
         items={[
@@ -108,7 +108,7 @@ export function ClientSidebar() {
 export function FreelancerSidebar() {
   const fresh = whatsNewFreshCount();
   return (
-    <aside className="df-panel h-fit w-full shrink-0 p-3 md:w-60">
+    <aside className="df-panel !hidden h-fit w-full shrink-0 p-3 lg:!block lg:w-60">
       <NavGroup
         title="Рабочая среда"
         items={[
@@ -149,7 +149,7 @@ export function FreelancerSidebar() {
 
 export function AdminSidebar() {
   return (
-    <aside className="df-panel h-fit w-full shrink-0 p-3 md:w-60">
+    <aside className="df-panel !hidden h-fit w-full shrink-0 p-3 lg:!block lg:w-60">
       <NavGroup
         title="Операции"
         items={[

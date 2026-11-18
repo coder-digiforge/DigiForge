@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { Download, ExternalLink, MessageSquare, Paperclip } from "lucide-react";
+import { ChevronLeft, Download, ExternalLink, Paperclip } from "lucide-react";
 import { MessageComposer } from "@/components/MessageComposer";
-import { EmptyState, PageTitle, Panel } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
 import type { Message, Thread } from "@/lib/types";
 
 export type ThreadPreview = Thread & {
@@ -9,22 +9,69 @@ export type ThreadPreview = Thread & {
   lastBody?: string;
 };
 
-function formatTime(iso: string) {
+function formatClock(iso: string) {
+  return new Date(iso).toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatListTime(iso: string) {
   const d = new Date(iso);
   const now = new Date();
-  const sameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  if (sameDay) {
-    return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startMsg = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dayDiff = Math.round((startToday.getTime() - startMsg.getTime()) / 86400000);
+
+  if (dayDiff === 0) return formatClock(iso);
+  if (dayDiff === 1) return "Вчера";
+  if (dayDiff < 7) {
+    return d.toLocaleDateString("ru-RU", { weekday: "short" });
   }
   return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+
+function formatDayLabel(iso: string) {
+  const d = new Date(iso);
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startMsg = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dayDiff = Math.round((startToday.getTime() - startMsg.getTime()) / 86400000);
+
+  if (dayDiff === 0) return "Сегодня";
+  if (dayDiff === 1) return "Вчера";
+  return d.toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",
+  });
+}
+
+function sameDay(a: string, b: string) {
+  const da = new Date(a);
+  const db = new Date(b);
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
 }
 
 function isImageAttachment(attachment: NonNullable<Message["attachment"]>) {
   if (attachment.mime?.startsWith("image/")) return true;
   return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(attachment.name);
+}
+
+function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg" }) {
+  const dim =
+    size === "lg" ? "h-14 w-14 text-lg" : size === "sm" ? "h-8 w-8 text-xs" : "h-11 w-11 text-[15px]";
+  return (
+    <div
+      className={`grid shrink-0 place-items-center rounded-full bg-[linear-gradient(145deg,#3a2f26,#1c1612)] font-semibold text-accent ring-1 ring-[rgba(224,168,107,0.28)] ${dim}`}
+    >
+      {name.slice(0, 1).toUpperCase()}
+    </div>
+  );
 }
 
 export function MessagesPanel({
@@ -33,8 +80,7 @@ export function MessagesPanel({
   messages,
   basePath,
   currentUserId,
-  title = "Переписки",
-  subtitle = "Диалоги по проектам и сделкам",
+  title = "Сообщения",
 }: {
   threads: ThreadPreview[];
   active?: ThreadPreview | null;
@@ -45,166 +91,226 @@ export function MessagesPanel({
   subtitle?: string;
 }) {
   return (
-    <div className="flex h-[calc(100dvh-8.75rem)] max-h-[calc(100dvh-8.75rem)] flex-col">
-      <PageTitle title={title} subtitle={subtitle} className="mb-4 shrink-0" />
-      <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[300px_1fr]">
-        {/* Thread list — scroll */}
-        <aside className="flex min-h-0 flex-col border-b border-border lg:border-b-0 lg:border-r">
-          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain p-3">
+    <div
+      className={
+        active
+          ? "fixed inset-x-0 bottom-0 top-[var(--header-h)] z-30 flex flex-col bg-[#120e0a] lg:static lg:inset-auto lg:z-auto lg:h-[calc(100dvh-7.5rem)] lg:max-h-[calc(100dvh-7.5rem)] lg:overflow-hidden lg:rounded-[22px] lg:border lg:border-border lg:bg-panel"
+          : "fixed inset-x-0 bottom-[var(--mobile-nav-h)] top-[var(--header-h)] z-30 flex flex-col bg-panel lg:static lg:inset-auto lg:bottom-auto lg:z-auto lg:h-[calc(100dvh-7.5rem)] lg:max-h-[calc(100dvh-7.5rem)] lg:overflow-hidden lg:rounded-[22px] lg:border lg:border-border"
+      }
+    >
+      <div className="grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[320px_1fr]">
+        {/* Inbox */}
+        <aside
+          className={`min-h-0 flex-col bg-panel ${active ? "hidden lg:flex" : "flex"}`}
+        >
+          <div className="shrink-0 border-b border-border/50 px-4 pb-3 pt-3 sm:px-5 sm:pt-4">
+            <h1 className="font-[family-name:var(--font-syne)] text-[28px] font-bold tracking-[-0.03em] text-[#f5e6c8]">
+              {title}
+            </h1>
+            <p className="mt-1 text-sm text-muted">
+              {threads.length === 0
+                ? "Пока пусто"
+                : `${threads.length} ${threads.length === 1 ? "диалог" : "диалога"}`}
+            </p>
+          </div>
+
+          <div className="df-scroll-hide min-h-0 flex-1 overflow-y-auto overscroll-contain">
             {threads.length === 0 && (
-              <div className="px-2 py-8">
-                <EmptyState title="Пока нет переписок" hint="Чаты появятся после отклика или эскроу" />
+              <div className="px-4 py-12">
+                <EmptyState
+                  title="Нет переписок"
+                  hint="Чаты появятся после отклика или эскроу"
+                />
               </div>
             )}
-            {threads.map((t) => {
-              const selected = active?.id === t.id;
-              return (
-                <Link
-                  key={t.id}
-                  href={`${basePath}/${t.id}`}
-                  className={`block rounded-xl px-3 py-3 transition ${
-                    selected
-                      ? "bg-[color-mix(in_srgb,var(--accent)_14%,transparent)]"
-                      : "hover:bg-panel-soft"
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-semibold ${
-                        selected
-                          ? "bg-accent text-[#1a120c]"
-                          : "bg-panel-soft text-accent"
-                      }`}
+            <ul>
+              {threads.map((t, index) => {
+                const selected = active?.id === t.id;
+                return (
+                  <li key={t.id}>
+                    <Link
+                      href={`${basePath}/${t.id}`}
+                      className={`flex items-center gap-3 px-4 py-3.5 transition active:bg-panel-soft sm:px-5 ${
+                        selected ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]" : ""
+                      } ${index !== threads.length - 1 ? "border-b border-border/35" : ""}`}
                     >
-                      {t.peerName.slice(0, 1)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <div className="truncate text-sm font-semibold text-text">{t.peerName}</div>
-                        <div className="shrink-0 text-[11px] text-muted">{formatTime(t.updatedAt)}</div>
+                      <Avatar name={t.peerName} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="truncate text-[16px] font-semibold text-text">
+                            {t.peerName}
+                          </span>
+                          <span className="shrink-0 text-[12px] text-muted">
+                            {formatListTime(t.updatedAt)}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 truncate text-[13px] text-muted">{t.title}</div>
+                        {t.lastBody && (
+                          <div className="mt-0.5 truncate text-[14px] text-muted-2">{t.lastBody}</div>
+                        )}
                       </div>
-                      <div className="mt-0.5 truncate text-xs text-muted">{t.title}</div>
-                      {t.lastBody && (
-                        <div className="mt-1 truncate text-xs text-muted-2">{t.lastBody}</div>
-                      )}
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         </aside>
 
-        {/* Chat pane — messages scroll, composer fixed */}
-        <section className="flex min-h-0 flex-col bg-[color-mix(in_srgb,var(--bg-deep)_55%,transparent)]">
+        {/* Thread */}
+        <section
+          className={`min-h-0 flex-col bg-[#120e0a] ${active ? "flex" : "hidden lg:flex"}`}
+        >
           {!active ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-              <div className="grid h-14 w-14 place-items-center rounded-full border border-border text-accent">
-                <MessageSquare size={22} />
-              </div>
+              <Avatar name="?" size="lg" />
               <EmptyState
                 title="Выберите диалог"
                 hint={
                   basePath.includes("/client/")
-                    ? "Слева — ваши переписки с исполнителями"
-                    : "Слева — ваши переписки с заказчиками"
+                    ? "Слева — переписки с исполнителями"
+                    : "Слева — переписки с заказчиками"
                 }
               />
             </div>
           ) : (
             <>
-              <header className="flex shrink-0 items-center gap-3 border-b border-border bg-panel/80 px-5 py-4">
-                <div className="grid h-10 w-10 place-items-center rounded-full bg-panel-soft text-sm font-semibold text-accent">
-                  {active.peerName.slice(0, 1)}
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate font-semibold text-text">{active.peerName}</div>
-                  <div className="truncate text-xs text-muted">{active.title}</div>
+              <header className="relative flex shrink-0 items-center border-b border-border/50 bg-[color-mix(in_srgb,var(--panel)_96%,transparent)] px-1 py-2 backdrop-blur-md sm:px-3">
+                <Link
+                  href={basePath}
+                  className="z-10 inline-flex items-center gap-0.5 rounded-full px-1.5 py-2 text-[15px] font-medium text-[#0a84ff] active:opacity-70 lg:invisible"
+                >
+                  <ChevronLeft size={22} strokeWidth={2.25} />
+                  <span>Назад</span>
+                </Link>
+
+                <div className="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 flex-col items-center px-20 text-center lg:pointer-events-auto lg:static lg:inset-auto lg:translate-y-0 lg:flex-1 lg:flex-row lg:gap-3 lg:px-0 lg:text-left">
+                  <Avatar name={active.peerName} size="sm" />
+                  <div className="min-w-0 lg:flex-1">
+                    <div className="truncate text-[14px] font-semibold leading-tight text-text sm:text-[15px]">
+                      {active.peerName}
+                    </div>
+                    <div className="truncate text-[11px] text-muted lg:text-xs">{active.title}</div>
+                  </div>
                 </div>
               </header>
 
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-5 md:px-6">
+              <div className="df-scroll-hide min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-4">
                 {messages.length === 0 && (
-                  <p className="py-10 text-center text-sm text-muted">Напишите первое сообщение</p>
+                  <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
+                    <Avatar name={active.peerName} size="lg" />
+                    <p className="text-[15px] font-semibold text-text">{active.peerName}</p>
+                    <p className="max-w-[240px] text-[13px] text-muted">Напишите первое сообщение</p>
+                  </div>
                 )}
-                {messages.map((m) => {
+
+                {messages.map((m, i) => {
                   const mine = m.senderId === currentUserId;
-                  const tone = mine ? "text-[#1a120c]" : "text-text";
-                  const muted = mine ? "text-[#1a120c]/70" : "text-muted";
+                  const prev = messages[i - 1];
+                  const next = messages[i + 1];
+                  const showDay = !prev || !sameDay(prev.createdAt, m.createdAt);
+                  const groupWithPrev =
+                    prev &&
+                    prev.senderId === m.senderId &&
+                    sameDay(prev.createdAt, m.createdAt) &&
+                    new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() < 120000;
+                  const groupWithNext =
+                    next &&
+                    next.senderId === m.senderId &&
+                    sameDay(next.createdAt, m.createdAt) &&
+                    new Date(next.createdAt).getTime() - new Date(m.createdAt).getTime() < 120000;
+
+                  const radius = mine
+                    ? [
+                        "rounded-[18px]",
+                        groupWithPrev ? "rounded-tr-md" : "",
+                        groupWithNext ? "rounded-br-md" : "rounded-br-sm",
+                      ].join(" ")
+                    : [
+                        "rounded-[18px]",
+                        groupWithPrev ? "rounded-tl-md" : "",
+                        groupWithNext ? "rounded-bl-md" : "rounded-bl-sm",
+                      ].join(" ");
+
                   return (
-                    <div
-                      key={m.id}
-                      className={`flex ${mine ? "justify-end" : "justify-start"}`}
-                    >
+                    <div key={m.id}>
+                      {showDay && (
+                        <div className="mb-3 mt-2 flex justify-center first:mt-0">
+                          <span className="rounded-full bg-panel-soft/80 px-3 py-1 text-[11px] font-medium text-muted">
+                            {formatDayLabel(m.createdAt)}
+                          </span>
+                        </div>
+                      )}
                       <div
-                        className={`max-w-[min(100%,520px)] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
-                          mine
-                            ? "rounded-br-md bg-accent text-[#1a120c]"
-                            : "rounded-bl-md border border-border bg-panel text-text"
+                        className={`flex ${mine ? "justify-end" : "justify-start"} ${
+                          groupWithPrev ? "mt-0.5" : "mt-2"
                         }`}
                       >
-                        {m.body ? (
-                          <div className={`whitespace-pre-wrap ${tone}`}>{m.body}</div>
-                        ) : null}
-                        {m.attachment && (
-                          <div
-                            className={`mt-1.5 overflow-hidden rounded-xl border ${
-                              mine
-                                ? "border-[#1a120c]/20 bg-[#1a120c]/10"
-                                : "border-border bg-panel-soft"
-                            }`}
-                          >
-                            {isImageAttachment(m.attachment) && (
-                              <a
-                                href={m.attachment.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="block overflow-hidden"
-                              >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={m.attachment.url}
-                                  alt={m.attachment.name}
-                                  className="h-auto max-h-56 w-full object-contain"
-                                />
-                              </a>
-                            )}
-                            <div className="flex items-start gap-2 px-3 py-2">
-                              <Paperclip size={14} className={`mt-0.5 shrink-0 ${muted}`} />
-                              <div className="min-w-0 flex-1">
-                                <div className={`truncate text-sm font-medium ${tone}`}>
-                                  {m.attachment.name}
-                                </div>
-                                <div className="mt-2 flex flex-wrap gap-3 text-xs font-semibold">
-                                  <a
-                                    href={m.attachment.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className={`inline-flex items-center gap-1 underline-offset-2 hover:underline ${
-                                      mine ? "text-[#1a120c]" : "text-accent"
-                                    }`}
-                                  >
-                                    <ExternalLink size={12} />
-                                    Открыть
-                                  </a>
-                                  <a
-                                    href={m.attachment.url}
-                                    download={m.attachment.name}
-                                    className={`inline-flex items-center gap-1 underline-offset-2 hover:underline ${
-                                      mine ? "text-[#1a120c]" : "text-accent"
-                                    }`}
-                                  >
-                                    <Download size={12} />
-                                    Скачать
-                                  </a>
+                        <div
+                          className={`max-w-[min(85%,340px)] overflow-hidden px-3.5 py-2 text-[15px] leading-[1.35] sm:max-w-[65%] ${radius} ${
+                            mine ? "bg-[#0a84ff] text-white" : "bg-[#2c2c2e] text-[#f5f5f7]"
+                          }`}
+                        >
+                          {m.body ? (
+                            <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                          ) : null}
+                          {m.attachment && (
+                            <div
+                              className={`mt-1.5 overflow-hidden rounded-2xl ${
+                                mine ? "bg-black/15" : "bg-black/25"
+                              }`}
+                            >
+                              {isImageAttachment(m.attachment) && (
+                                <a
+                                  href={m.attachment.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block overflow-hidden"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={m.attachment.url}
+                                    alt={m.attachment.name}
+                                    className="h-auto max-h-56 w-full object-cover"
+                                  />
+                                </a>
+                              )}
+                              <div className="flex items-start gap-2 px-3 py-2">
+                                <Paperclip size={14} className="mt-0.5 shrink-0 opacity-80" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-sm font-medium">
+                                    {m.attachment.name}
+                                  </div>
+                                  <div className="mt-1.5 flex flex-wrap gap-3 text-xs font-semibold opacity-90">
+                                    <a
+                                      href={m.attachment.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                                    >
+                                      <ExternalLink size={12} />
+                                      Открыть
+                                    </a>
+                                    <a
+                                      href={m.attachment.url}
+                                      download={m.attachment.name}
+                                      className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                                    >
+                                      <Download size={12} />
+                                      Скачать
+                                    </a>
+                                  </div>
                                 </div>
                               </div>
                             </div>
+                          )}
+                          <div
+                            className={`mt-1 text-right text-[10px] ${
+                              mine ? "text-white/70" : "text-white/45"
+                            }`}
+                          >
+                            {formatClock(m.createdAt)}
                           </div>
-                        )}
-                        <div className={`mt-1 text-[10px] ${muted}`}>
-                          {formatTime(m.createdAt)}
                         </div>
                       </div>
                     </div>
@@ -219,7 +325,6 @@ export function MessagesPanel({
           )}
         </section>
       </div>
-    </Panel>
     </div>
   );
 }

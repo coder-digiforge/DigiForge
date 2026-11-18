@@ -114,11 +114,21 @@ export default async function LandingPage() {
 
   return (
     <div>
-      <section className="relative isolate bg-[#120e0a]">
-        {/* Glowing energy trails from banner across the header */}
+      <section className="relative isolate overflow-hidden bg-[#120e0a]">
+        {/* Mobile atmosphere — soft wash, no busy trails */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
+          className="pointer-events-none absolute inset-0 z-0 md:hidden"
+        >
+          <div className="absolute inset-x-0 top-0 h-[70%] bg-[radial-gradient(ellipse_at_top,rgba(224,168,107,0.12),transparent_58%)]" />
+          <div className="absolute -right-16 top-24 h-56 w-56 rounded-full bg-[radial-gradient(circle,rgba(224,168,107,0.14),transparent_68%)] blur-2xl" />
+          <div className="absolute -left-20 bottom-10 h-48 w-48 rounded-full bg-[radial-gradient(circle,rgba(212,154,90,0.1),transparent_70%)] blur-2xl" />
+        </div>
+
+        {/* Desktop energy trails — paired with hero image */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-0 hidden overflow-hidden md:block"
         >
           <svg
             className="absolute inset-0 h-full w-full"
@@ -209,39 +219,66 @@ export default async function LandingPage() {
           </svg>
         </div>
 
-        <div className="relative z-10 mx-auto grid max-w-[1440px] items-center gap-10 px-6 py-14 pb-10 md:grid-cols-2 md:gap-14 md:px-12 md:pb-12 md:pt-[72px] lg:px-20">
-          <div className="space-y-6 md:max-w-[600px]">
-            <div className="df-badge-shine inline-flex items-center rounded-full border border-[rgba(226,178,116,0.35)] bg-[#1c140f]/70 px-3 py-1.5 text-xs font-semibold text-accent">
+        <div className="relative z-10 mx-auto grid max-w-[1440px] items-center gap-10 px-5 pb-8 pt-10 sm:px-6 md:grid-cols-2 md:gap-14 md:px-12 md:pb-12 md:pt-[72px] lg:px-20">
+          <div className="flex flex-col items-center text-center md:max-w-[600px] md:items-start md:text-left">
+            <div className="df-badge-shine inline-flex w-fit items-center rounded-full border border-[rgba(226,178,116,0.38)] bg-[#1c140f]/75 px-3.5 py-1.5 text-[11px] font-semibold tracking-wide text-accent sm:text-xs">
               <i className="df-badge-shine-glare" aria-hidden />
               <span>Фриланс-биржа · эскроу · USDT</span>
             </div>
-            <h1 className="font-[family-name:var(--font-syne)] text-[34px] font-bold leading-[1.15] text-[#f5e6c8] sm:text-[36px] lg:text-[40px]">
+
+            <h1 className="mt-5 font-[family-name:var(--font-syne)] text-[32px] font-bold leading-[1.12] tracking-[-0.02em] text-[#f5e6c8] sm:mt-6 sm:text-[36px] lg:text-[40px] lg:leading-[1.15]">
               Найдите своего специалиста.
               <br />
               Без долгого поиска.
             </h1>
-            <p className="max-w-[520px] text-base leading-relaxed text-[#c4b8a8] md:text-[17px]">
+
+            <p className="mt-4 max-w-[520px] text-[15px] leading-relaxed text-[#b8ab9a] sm:mt-5 sm:text-base md:text-[17px] md:text-[#c4b8a8]">
               Разместите заказ, получите предложения от исполнителей и оплачивайте работу только
               после принятия результата.
             </p>
-            <div className="flex flex-wrap gap-3">
+
+            {/* Mobile divider — soft gold wave */}
+            <div aria-hidden className="my-7 w-full max-w-[280px] md:hidden">
+              <svg
+                className="h-3 w-full text-accent/55"
+                viewBox="0 0 320 12"
+                preserveAspectRatio="none"
+                fill="none"
+              >
+                <path
+                  d="M0 7C40 2 80 11 120 7C160 3 200 11 240 7C280 3 300 5 320 6"
+                  stroke="currentColor"
+                  strokeWidth="1.25"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M0 7C40 2 80 11 120 7C160 3 200 11 240 7C280 3 300 5 320 6"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  opacity="0.18"
+                />
+              </svg>
+            </div>
+
+            <div className="flex w-full flex-col gap-3 md:mt-6 md:flex-row md:flex-wrap">
               <ButtonLink
                 href="/freelancers"
-                className="!px-[22px] !py-3.5 !text-[15px] shadow-[0_0_28px_rgba(224,168,107,0.28)]"
+                className="w-full !px-[22px] !py-[15px] !text-[15px] shadow-[0_0_28px_rgba(224,168,107,0.28)] md:w-auto"
               >
                 Найти фрилансера
               </ButtonLink>
               <ButtonLink
                 href="/projects"
                 variant="ghost"
-                className="!border-[rgba(226,178,116,0.45)] !bg-[#1c140f]/55 !px-[22px] !py-3.5 !text-[15px] text-[#f5e6c8]"
+                className="w-full !border-[rgba(226,178,116,0.45)] !bg-[#1c140f]/55 !px-[22px] !py-[15px] !text-[15px] text-[#f5e6c8] md:w-auto"
               >
                 Заказы для фрилансеров
               </ButtonLink>
             </div>
           </div>
 
-          <div className="relative w-full max-w-[640px] justify-self-center md:justify-self-end">
+          <div className="relative hidden w-full max-w-[640px] justify-self-end md:block">
             <div
               aria-hidden
               className="pointer-events-none absolute -inset-3 z-0 rounded-[28px] bg-[radial-gradient(ellipse_at_center,rgba(224,168,107,0.18),transparent_70%)] blur-xl"
@@ -253,7 +290,7 @@ export default async function LandingPage() {
                 width={1536}
                 height={1024}
                 priority
-                sizes="(max-width: 768px) 100vw, 640px"
+                sizes="640px"
                 className="aspect-[640/420] h-auto w-full scale-[1.06] object-cover object-center"
               />
             </div>
@@ -270,19 +307,19 @@ export default async function LandingPage() {
         </div>
 
         {/* Trust row under banner — full screen width */}
-        <div className="relative z-10 w-full pb-12 pt-6 md:pb-14">
-          <ul className="mx-auto grid w-full max-w-[1100px] grid-cols-1 gap-5 px-6 text-[15px] text-[#e0a86b] sm:grid-cols-3 sm:gap-8 md:px-8">
+        <div className="relative z-10 w-full border-t border-[rgba(226,178,116,0.12)] pb-10 pt-7 md:border-t-0 md:pb-14 md:pt-6">
+          <ul className="mx-auto flex w-full max-w-[1100px] flex-row items-start justify-between gap-2 px-4 text-center text-[11px] leading-snug text-[#e0a86b] sm:gap-8 sm:px-6 sm:text-[15px] sm:text-left md:justify-center md:gap-10 md:px-8 md:text-left">
             {heroTrust.map((item) => {
               const Icon = item.icon;
               return (
                 <li
                   key={item.label}
-                  className="inline-flex items-center justify-center gap-3"
+                  className="inline-flex min-w-0 flex-1 flex-col items-center gap-2 sm:flex-row sm:justify-center sm:gap-3 md:flex-none"
                 >
-                  <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[rgba(226,178,116,0.45)] text-accent">
-                    <Icon size={16} strokeWidth={1.75} />
+                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[rgba(226,178,116,0.45)] bg-[#1c140f]/40 text-accent sm:h-9 sm:w-9">
+                    <Icon size={15} strokeWidth={1.75} />
                   </span>
-                  {item.label}
+                  <span className="max-w-[7.5rem] sm:max-w-none">{item.label}</span>
                 </li>
               );
             })}
@@ -428,31 +465,39 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-[1440px] px-6 py-16 md:px-12 lg:px-20">
-        <Panel className="grid gap-8 p-8 md:grid-cols-2 md:p-12">
+      <section className="mx-auto max-w-[1440px] px-5 py-12 sm:px-6 md:px-12 md:py-16 lg:px-20">
+        <Panel className="grid gap-7 p-5 sm:p-8 md:grid-cols-2 md:gap-8 md:p-12">
           <div>
-            <h2 className="font-[family-name:var(--font-syne)] text-3xl font-bold">
+            <h2 className="font-[family-name:var(--font-syne)] text-[26px] font-bold leading-tight text-[#f5e6c8] sm:text-3xl">
               Зарегистрируйтесь бесплатно — и разместите заказ
             </h2>
-            <ul className="mt-6 space-y-3 text-sm text-muted-2">
+            <ul className="mt-5 space-y-3 text-sm leading-relaxed text-muted-2 sm:mt-6">
               <li>• Для заказчиков — бесплатно</li>
               <li>• Лента проектов для фрилансеров сразу после регистрации</li>
               <li>• Оплата в крипте только после приёмки через эскроу</li>
             </ul>
           </div>
-          <div className="rounded-[var(--radius)] border border-border bg-bg-deep/70 p-6">
-            <div className="text-sm text-muted">Быстрый старт</div>
-            <div className="mt-4 flex gap-2">
-              <ButtonLink href="/register?role=client" className="flex-1">
+          <div className="rounded-[var(--radius)] border border-border bg-bg-deep/70 p-5 sm:p-6">
+            <div className="text-sm font-medium text-muted">Быстрый старт</div>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:gap-3">
+              <ButtonLink
+                href="/register?role=client"
+                className="w-full whitespace-nowrap !px-5 !py-3.5 !text-[15px] sm:flex-1"
+              >
                 Я заказчик
               </ButtonLink>
-              <ButtonLink href="/register?role=freelancer" variant="ghost" className="flex-1">
+              <ButtonLink
+                href="/register?role=freelancer"
+                variant="ghost"
+                className="w-full whitespace-nowrap !border-[rgba(226,178,116,0.4)] !px-5 !py-3.5 !text-[15px] sm:flex-1"
+              >
                 Я фрилансер
               </ButtonLink>
             </div>
-            <p className="mt-4 text-xs text-muted">
-              Демо: anna@client.io / demo1234 · sergey@freelancer.io / demo1234
-            </p>
+            <div className="mt-5 space-y-1.5 border-t border-border/60 pt-4 text-xs leading-relaxed text-muted">
+              <p>Демо: anna@client.io / demo1234</p>
+              <p>sergey@freelancer.io / demo1234</p>
+            </div>
           </div>
         </Panel>
       </section>

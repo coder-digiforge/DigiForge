@@ -1,4 +1,5 @@
 import { AppHeader } from "@/components/AppHeader";
+import { FreelancerMobileNav } from "@/components/CabinetMobileNav";
 import { FreelancerSidebar } from "@/components/Sidebar";
 import type { TaskPreview } from "@/components/TasksMenu";
 import { ThemeShell } from "@/components/ThemeShell";
@@ -43,10 +44,11 @@ export default async function FreelancerLayout({ children }: { children: React.R
         tasks={tasks}
         notifications={notifications}
       />
-      <div className="mx-auto flex w-full max-w-[1440px] min-h-0 flex-1 flex-col gap-6 px-6 py-6 md:flex-row md:px-10">
+      <div className="mx-auto flex w-full max-w-[1440px] min-h-0 flex-1 flex-col gap-6 px-4 py-4 pb-24 sm:px-6 sm:py-6 lg:flex-row lg:px-10 lg:pb-6">
         <FreelancerSidebar />
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden">{children}</div>
       </div>
+      <FreelancerMobileNav />
     </ThemeShell>
   );
 }
