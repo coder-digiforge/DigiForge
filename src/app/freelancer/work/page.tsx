@@ -22,7 +22,11 @@ export default async function FreelancerWorkPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <div className="font-semibold">{project?.title}</div>
-                    <div className="mt-1 text-sm text-muted">{d.amount} USDT в эскроу</div>
+                    <div className="mt-1 text-sm text-muted">
+                      {d.status === "pending_funding"
+                        ? `${d.amount} USDT · ожидает оплату заказчиком`
+                        : `${d.amount} USDT в эскроу`}
+                    </div>
                   </div>
                   <Chip>{d.status}</Chip>
                 </div>
@@ -33,7 +37,7 @@ export default async function FreelancerWorkPage() {
                       <Button type="submit">Сдать работу</Button>
                     </form>
                   )}
-                  {!["released", "refunded"].includes(d.status) && (
+                  {["funded", "in_progress", "delivered"].includes(d.status) && (
                     <form action={disputeDealAction}>
                       <input type="hidden" name="dealId" value={d.id} />
                       <Button type="submit" variant="ghost">

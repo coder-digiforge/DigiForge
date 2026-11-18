@@ -16,10 +16,11 @@ function revalidateAdmin() {
 }
 
 export async function adminResolveAction(formData: FormData) {
-  await requireUser(["admin"]);
+  const admin = await requireUser(["admin"]);
   await adminResolveDeal(
     String(formData.get("dealId")),
     String(formData.get("resolution")) as "release" | "refund",
+    admin.id,
   );
   revalidateAdmin();
   redirect("/admin/deals");
@@ -42,10 +43,15 @@ export async function adminCancelProjectAction(formData: FormData) {
 }
 
 export async function adminProcessWithdrawalAction(formData: FormData) {
-  await requireUser(["admin"]);
+  const admin = await requireUser(["admin"]);
   await adminProcessWithdrawal(
     String(formData.get("withdrawalId")),
     String(formData.get("decision")) as "approve" | "reject",
+    admin.id,
+    {
+      txHash: String(formData.get("txHash") ?? "") || undefined,
+      rejectReason: String(formData.get("rejectReason") ?? "") || undefined,
+    },
   );
   revalidateAdmin();
   redirect("/admin/finance");

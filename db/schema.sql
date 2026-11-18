@@ -1,11 +1,32 @@
--- DigiForge Neon / Lakebase schema (ready for migration from file store)
+-- DigiForge Neon / Lakebase schema (finance-hardened)
+-- Ready for migration from JSON app_store document.
 
 create type user_role as enum ('client', 'freelancer', 'admin');
 create type crypto_network as enum ('TRC20', 'ERC20');
 create type crypto_asset as enum ('USDT');
 create type project_status as enum ('open', 'in_progress', 'delivered', 'completed', 'disputed', 'cancelled');
-create type escrow_status as enum ('pending_funding', 'funded', 'in_progress', 'delivered', 'released', 'disputed', 'refunded');
-create type ledger_kind as enum ('deposit', 'withdraw', 'escrow_lock', 'escrow_release', 'escrow_refund', 'fee', 'prime');
+create type escrow_status as enum (
+  'pending_funding',
+  'funded',
+  'in_progress',
+  'delivered',
+  'released',
+  'disputed',
+  'refunded'
+);
+create type ledger_kind as enum (
+  'deposit',
+  'withdraw',
+  'withdraw_hold',
+  'withdraw_release',
+  'escrow_lock',
+  'escrow_release',
+  'escrow_refund',
+  'fee',
+  'prime'
+);
+create type deposit_status as enum ('awaiting', 'confirming', 'completed', 'expired');
+create type withdrawal_status as enum ('pending', 'processing', 'completed', 'rejected');
 
 create table users (
   id text primary key,
@@ -23,6 +44,8 @@ create table users (
   wallet_asset crypto_asset,
   two_fa_enabled boolean not null default false,
   digi_prime_until timestamptz,
+  sensitive_changed_at timestamptz,
+  deactivated_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -60,13 +83,17 @@ create table deals (
   client_id text not null references users(id),
   freelancer_id text not null references users(id),
   bid_id text not null references bids(id),
-  amount numeric(18,2) not null,
+  amount numeric(18,2) not null check (amount > 0),
   fee_percent numeric(5,2) not null default 10,
+  fee_amount numeric(18,2) not null,
   status escrow_status not null,
   funded_at timestamptz,
   delivered_at timestamptz,
   released_at timestamptz,
-  created_at timestamptz not null default now()
+  disputed_at timestamptz,
+  funding_deadline_at timestamptz,
+  created_at timestamptz not null default now(),
+  constraint deals_fee_invariant check (fee_amount = round(amount * fee_percent / 100.0, 2))
 );
 
 create table ledger_entries (
@@ -79,9 +106,24 @@ create table ledger_entries (
   note text not null,
   tx_hash text,
   deal_id text references deals(id),
+  deposit_id text,
+  withdrawal_id text,
   created_at timestamptz not null default now(),
   settled_at timestamptz
 );
+
+-- Idempotency: one on-chain tx cannot credit twice
+create unique index ledger_tx_hash_uidx on ledger_entries (tx_hash) where tx_hash is not null;
+-- One escrow lock / release / refund / fee set per deal kind
+create unique index ledger_deal_kind_uidx
+  on ledger_entries (deal_id, kind)
+  where deal_id is not null and kind in ('escrow_lock', 'escrow_release', 'escrow_refund', 'fee');
+create unique index ledger_deposit_uidx
+  on ledger_entries (deposit_id)
+  where deposit_id is not null and kind = 'deposit';
+create unique index ledger_withdraw_hold_uidx
+  on ledger_entries (withdrawal_id)
+  where withdrawal_id is not null and kind = 'withdraw_hold';
 
 create table threads (
   id text primary key,
@@ -138,21 +180,56 @@ create table notifications (
 create table deposits (
   id text primary key,
   user_id text not null references users(id),
-  amount numeric(18,2) not null,
+  amount numeric(18,2) not null check (amount > 0),
   asset crypto_asset not null,
   network crypto_network not null,
   address text not null,
-  status text not null,
+  status deposit_status not null,
+  tx_hash text unique,
+  provider_ref text,
+  expires_at timestamptz not null,
+  completed_at timestamptz,
   created_at timestamptz not null default now()
 );
 
 create table withdrawals (
   id text primary key,
   user_id text not null references users(id),
-  amount numeric(18,2) not null,
+  amount numeric(18,2) not null check (amount > 0),
   asset crypto_asset not null,
   network crypto_network not null,
   address text not null,
-  status text not null,
+  status withdrawal_status not null,
+  tx_hash text unique,
+  reviewed_by text references users(id),
+  reviewed_at timestamptz,
+  reject_reason text,
   created_at timestamptz not null default now()
 );
+
+create table audit_log (
+  id text primary key,
+  at timestamptz not null default now(),
+  actor_user_id text references users(id),
+  action text not null,
+  entity_type text,
+  entity_id text,
+  ip text,
+  meta jsonb not null default '{}'::jsonb
+);
+
+create table webhook_events (
+  id text primary key,
+  provider text not null,
+  event_key text not null,
+  deposit_id text references deposits(id),
+  payload_hash text not null,
+  status text not null,
+  created_at timestamptz not null default now(),
+  unique (provider, event_key)
+);
+
+create index audit_log_at_idx on audit_log (at desc);
+create index ledger_user_created_idx on ledger_entries (user_id, created_at desc);
+create index deals_status_idx on deals (status);
+create index withdrawals_status_idx on withdrawals (status);

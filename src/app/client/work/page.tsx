@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import {
   disputeDealAction,
+  fundDealAction,
   releaseDealAction,
 } from "@/app/actions/marketplace";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -61,8 +62,13 @@ const statusOrder: EscrowStatus[] = [
   "refunded",
 ];
 
-export default async function ClientWorkPage() {
+export default async function ClientWorkPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const user = await requireUser(["client"]);
+  const { error } = await searchParams;
   const deals = (await listDealsForUser(user.id)).filter((d) => d.clientId === user.id);
   const db = await getDb();
 
@@ -74,7 +80,9 @@ export default async function ClientWorkPage() {
     ["pending_funding", "funded", "in_progress", "delivered", "disputed"].includes(d.status),
   );
   const awaitingAccept = deals.filter((d) => d.status === "delivered");
-  const escrowTotal = active.reduce((sum, d) => sum + d.amount, 0);
+  const escrowTotal = deals
+    .filter((d) => ["funded", "in_progress", "delivered", "disputed"].includes(d.status))
+    .reduce((sum, d) => sum + d.amount, 0);
 
   const rows = sorted.map((d) => {
     const project = db.projects.find((p) => p.id === d.projectId);
@@ -93,13 +101,19 @@ export default async function ClientWorkPage() {
       <Panel className="p-6 md:p-8">
         <PageTitle
           title="В работе"
-          subtitle="Эскроу-сделки: приёмка, выплата и диспуты"
+          subtitle="Эскроу-сделки: оплата сейфа, приёмка, выплата и диспуты"
           action={
             <ButtonLink href="/client/projects" variant="ghost" className="!rounded-full !text-sm">
               Мои проекты
             </ButtonLink>
           }
         />
+
+        {error && (
+          <p className="mb-4 rounded-xl border border-danger/40 bg-[color-mix(in_srgb,var(--danger)_12%,transparent)] px-4 py-3 text-sm text-danger">
+            {error}
+          </p>
+        )}
 
         <div className="mb-6 grid gap-3 sm:grid-cols-3">
           <div className="rounded-2xl border border-border bg-panel-soft/70 px-4 py-4">
@@ -141,9 +155,10 @@ export default async function ClientWorkPage() {
           <div className="space-y-4">
             {rows.map(({ deal: d, project, freelancer, thread }) => {
               const meta = statusMeta[d.status];
-              const canRelease = d.status === "delivered" || d.status === "in_progress";
-              const canDispute = !["released", "refunded"].includes(d.status);
-              const fee = Math.round((d.amount * d.feePercent) / 100);
+              const canFund = d.status === "pending_funding";
+              const canRelease = d.status === "delivered";
+              const canDispute = ["funded", "in_progress", "delivered"].includes(d.status);
+              const fee = d.feeAmount ?? Math.round((d.amount * d.feePercent) / 100);
               const payout = d.amount - fee;
 
               return (
@@ -231,6 +246,14 @@ export default async function ClientWorkPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 border-t border-border bg-[color-mix(in_srgb,var(--panel-soft)_55%,transparent)] px-5 py-3.5 md:px-6">
+                    {canFund && (
+                      <form action={fundDealAction}>
+                        <input type="hidden" name="dealId" value={d.id} />
+                        <Button type="submit" className="!rounded-full !px-5 !py-2 !text-sm">
+                          Оплатить эскроу
+                        </Button>
+                      </form>
+                    )}
                     {canRelease && (
                       <form action={releaseDealAction}>
                         <input type="hidden" name="dealId" value={d.id} />

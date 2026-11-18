@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowDownLeft, ArrowUpRight, Lock, Shield, Wallet } from "lucide-react";
 import { depositAction, withdrawAction } from "@/app/actions/marketplace";
 import { Button, ButtonLink, Input, PageTitle, Panel } from "@/components/ui";
+import { WITHDRAW_REQUIRES_2FA_USDT } from "@/lib/finance/constants";
 import type { LedgerEntry, LedgerKind, WalletBalances } from "@/lib/types";
 
 export type FinanceTab = "balance" | "safe" | "services" | "archive" | "stats";
@@ -17,6 +18,8 @@ const ALL_TABS: { id: FinanceTab; label: string }[] = [
 const KIND_LABEL: Record<LedgerKind, string> = {
   deposit: "Пополнение",
   withdraw: "Вывод",
+  withdraw_hold: "Холд вывода",
+  withdraw_release: "Возврат холда",
   escrow_lock: "В сейф",
   escrow_release: "Из сейфа",
   escrow_refund: "Возврат",
@@ -90,7 +93,9 @@ export function FinancePanel({
     ["escrow_lock", "escrow_release", "escrow_refund"].includes(e.kind),
   );
   const archive = ledger.filter((e) =>
-    ["withdraw", "fee", "prime", "deposit"].includes(e.kind),
+    ["withdraw", "withdraw_hold", "withdraw_release", "fee", "prime", "deposit"].includes(
+      e.kind,
+    ),
   );
   const stats = buildMonthStats(ledger);
   const maxStat = Math.max(1, ...stats.map((s) => s.value));
@@ -141,24 +146,32 @@ export function FinancePanel({
               <Wallet size={16} className="text-accent" />
               Доступный баланс
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-2xl border border-border bg-panel-soft/70 p-5">
-                <div className="text-xs uppercase tracking-wider text-muted">USDT</div>
+                <div className="text-xs uppercase tracking-wider text-muted">Доступно</div>
                 <div className="mt-2 font-[family-name:var(--font-syne)] text-3xl font-bold text-text">
                   {balances.available}
                 </div>
-                <div className="mt-1 text-xs text-muted">TRC20 · ERC20</div>
+                <div className="mt-1 text-xs text-muted">USDT · можно тратить</div>
               </div>
               <div className="rounded-2xl border border-border bg-panel-soft/70 p-5">
                 <div className="text-xs uppercase tracking-wider text-muted">В сейфе</div>
                 <div className="mt-2 font-[family-name:var(--font-syne)] text-3xl font-bold text-accent">
                   {balances.escrow}
                 </div>
-                <div className="mt-1 text-xs text-muted">Заблокировано в эскроу</div>
+                <div className="mt-1 text-xs text-muted">Эскроу до приёмки</div>
+              </div>
+              <div className="rounded-2xl border border-border bg-panel-soft/70 p-5">
+                <div className="text-xs uppercase tracking-wider text-muted">На выводе</div>
+                <div className="mt-2 font-[family-name:var(--font-syne)] text-3xl font-bold text-text">
+                  {balances.pendingWithdraw}
+                </div>
+                <div className="mt-1 text-xs text-muted">Холд до approve</div>
               </div>
             </div>
             <p className="mt-5 text-xs leading-relaxed text-muted">
-              Вывод идёт на крипто-кошелёк. Комиссия сети (газ) — на стороне блокчейна.
+              Вывод идёт через холд и проверку админа. От {WITHDRAW_REQUIRES_2FA_USDT} USDT
+              нужен 2FA. После смены пароля/email/кошелька — пауза 24 часа.
             </p>
           </Panel>
 
@@ -182,44 +195,48 @@ export function FinancePanel({
           </Panel>
 
           <Panel className="p-5 md:p-6 xl:col-span-2">
-            <div
-              className={`grid gap-6 ${role === "client" ? "lg:grid-cols-2" : "max-w-xl"}`}
-            >
-              {role === "client" && (
-                <form action={depositAction} className="space-y-3">
-                  <h3 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
-                    Пополнить
-                  </h3>
-                  <p className="text-xs text-muted">Демо: депозит подтверждается сразу</p>
-                  <Input
-                    name="amount"
-                    type="number"
-                    min={1}
-                    step="0.01"
-                    required
-                    placeholder="Сумма"
-                  />
-                  <input type="hidden" name="asset" value="USDT" />
-                  <select name="network" className="df-input" defaultValue="TRC20">
-                    <option value="TRC20">TRC20</option>
-                    <option value="ERC20">ERC20</option>
-                  </select>
-                  <Button type="submit" className="!rounded-full">
-                    Создать депозит
-                  </Button>
-                </form>
-              )}
+            <div className="grid gap-6 lg:grid-cols-2">
+              <form action={depositAction} className="space-y-3">
+                <h3 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
+                  Пополнить
+                </h3>
+                <p className="text-xs text-muted">
+                  Создаётся invoice. В production зачисление только после подписанного
+                  webhook провайдера.
+                </p>
+                <Input
+                  name="amount"
+                  type="number"
+                  min={1}
+                  step="0.01"
+                  required
+                  placeholder="Сумма"
+                />
+                <input type="hidden" name="asset" value="USDT" />
+                <select name="network" className="df-input" defaultValue="TRC20">
+                  <option value="TRC20">TRC20</option>
+                  <option value="ERC20">ERC20</option>
+                </select>
+                <Button type="submit" className="!rounded-full">
+                  Создать депозит
+                </Button>
+              </form>
 
               <form action={withdrawAction} className="space-y-3">
                 <h3 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
                   Вывести
                 </h3>
                 <p className="text-xs text-muted">
-                  {role === "freelancer"
-                    ? "Заработанные средства на внешний кошелёк"
-                    : "На внешний кошелёк"}
+                  Минимум 10 USDT. Средства холдируются до подтверждения админом.
                 </p>
-                <Input name="amount" type="number" min={1} step="0.01" required placeholder="Сумма" />
+                <Input
+                  name="amount"
+                  type="number"
+                  min={10}
+                  step="0.01"
+                  required
+                  placeholder="Сумма"
+                />
                 <Input
                   name="address"
                   required
@@ -232,7 +249,7 @@ export function FinancePanel({
                   <option value="ERC20">ERC20</option>
                 </select>
                 <Button type="submit" className="!rounded-full">
-                  Вывести
+                  Запросить вывод
                 </Button>
               </form>
             </div>

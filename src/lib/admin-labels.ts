@@ -33,6 +33,8 @@ export const dealStatusLabel: Record<EscrowStatus, string> = {
 export const ledgerKindLabel: Record<LedgerKind, string> = {
   deposit: "Депозит",
   withdraw: "Вывод",
+  withdraw_hold: "Холд вывода",
+  withdraw_release: "Снятие холда",
   escrow_lock: "Лок эскроу",
   escrow_release: "Релиз эскроу",
   escrow_refund: "Возврат эскроу",

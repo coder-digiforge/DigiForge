@@ -3,6 +3,7 @@ import type { DbShape } from "./types";
 const now = new Date().toISOString();
 
 export const seedDb: DbShape = {
+  meta: { version: 1, financePolicyVersion: 1 },
   users: [
     {
       id: "u-admin",
@@ -273,6 +274,7 @@ export const seedDb: DbShape = {
       bidId: "b-2",
       amount: 1400,
       feePercent: 10,
+      feeAmount: 140,
       status: "in_progress",
       fundedAt: now,
       createdAt: now,
@@ -325,13 +327,13 @@ export const seedDb: DbShape = {
     {
       id: "l-5",
       userId: "u-sergey",
-      kind: "withdraw",
+      kind: "withdraw_hold",
       amount: -400,
       asset: "USDT",
       network: "TRC20",
-      note: "Вывод на TXdemoWa…",
+      note: "Холд вывода · TXdemo…1111",
+      withdrawalId: "wd-1",
       createdAt: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
-      settledAt: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
     },
     {
       id: "l-6",
@@ -346,13 +348,13 @@ export const seedDb: DbShape = {
     {
       id: "l-7",
       userId: "u-olga",
-      kind: "withdraw",
+      kind: "withdraw_hold",
       amount: -150,
       asset: "USDT",
       network: "ERC20",
-      note: "Вывод на 0xDemoOl…",
+      note: "Холд вывода · 0xDemo…0001",
+      withdrawalId: "wd-2",
       createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-      settledAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
     },
   ],
   threads: [
@@ -564,6 +566,9 @@ export const seedDb: DbShape = {
       network: "TRC20",
       address: "TXdemoDepositAddrAnna00000000001",
       status: "completed",
+      txHash: "0xseeddeposit001",
+      expiresAt: now,
+      completedAt: now,
       createdAt: now,
     },
     {
@@ -574,6 +579,7 @@ export const seedDb: DbShape = {
       network: "TRC20",
       address: "TXdemoDepositAddrSergey000000001",
       status: "awaiting",
+      expiresAt: new Date(Date.now() + 1000 * 60 * 75).toISOString(),
       createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
     },
   ],
@@ -599,4 +605,6 @@ export const seedDb: DbShape = {
       createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
     },
   ],
+  auditLog: [],
+  webhookEvents: [],
 };

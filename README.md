@@ -41,9 +41,14 @@ npm run dev
 | Фрилансер | sergey@freelancer.io | demo1234 |
 | Admin | admin@digiforge.io | admin123 |
 
-## Крипто-поток
+## Крипто-поток (finance-hardened)
 
-1. Пополнение баланса (депозит → webhook `/api/crypto/webhook`)
-2. Выбор ставки → lock в эскроу (сейф)
-3. Сдача работы → приёмка → release (−10% комиссия)
-4. Вывод на кошелёк / диспут через admin
+1. **Депозит** — invoice `awaiting` → зачисление только через подписанный webhook `POST /api/crypto/webhook` (HMAC). В local demo без `CRYPTOPAY_IPN_SECRET` возможен autoconfirm.
+2. **Accept bid** → deal `pending_funding` → **fund** (lock) при достаточном балансе, иначе кнопка «Оплатить эскроу».
+3. **Deliver → release** — выплата фрилансеру и `fee` платформе; комиссия зафиксирована в deal (`feeAmount`).
+4. **Withdraw** — `withdraw_hold` → admin approve/reject; reject возвращает hold (`withdraw_release`).
+5. **Диспут** — только из рабочих статусов; admin release/refund с audit log.
+
+Безопасность: scrypt-пароли, httpOnly/secure cookies, CAS по `meta.version`, rate limits, лимиты вывода, 2FA-порог, cooldown 24ч после смены пароля/email/кошелька, идемпотентность `tx_hash` / webhook `event_key`.
+
+Целевая реляционная схема: `db/schema.sql`.

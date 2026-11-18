@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
+import { assertCryptoNetwork } from "@/lib/finance";
 import {
   acceptBid,
   addPortfolioCase,
@@ -15,6 +16,7 @@ import {
   createProject,
   deliverDeal,
   disputeDeal,
+  fundDeal,
   releaseDeal,
   requestWithdraw,
   markNotificationsRead,
@@ -23,6 +25,12 @@ import {
 } from "@/lib/store";
 import type { CryptoNetwork } from "@/lib/types";
 import { saveAvatarUpload, saveChatUpload, savePortfolioCover } from "@/lib/uploads";
+
+function demoDepositAutoconfirmEnabled() {
+  if (process.env.ALLOW_DEMO_DEPOSIT_AUTOCONFIRM === "true") return true;
+  if (process.env.ALLOW_DEMO_DEPOSIT_AUTOCONFIRM === "false") return false;
+  return process.env.NODE_ENV !== "production" && !process.env.CRYPTOPAY_IPN_SECRET;
+}
 
 export async function createProjectAction(formData: FormData) {
   const user = await requireUser(["client"]);
@@ -89,47 +97,80 @@ export async function deliverDealAction(formData: FormData) {
 
 export async function releaseDealAction(formData: FormData) {
   const user = await requireUser(["client"]);
-  await releaseDeal(String(formData.get("dealId")), user.id);
+  try {
+    await releaseDeal(String(formData.get("dealId")), user.id);
+  } catch (e) {
+    redirect(`/client/work?error=${encodeURIComponent((e as Error).message)}`);
+  }
+  revalidatePath("/client/work");
+  redirect("/client/work");
+}
+
+export async function fundDealAction(formData: FormData) {
+  const user = await requireUser(["client"]);
+  try {
+    await fundDeal(String(formData.get("dealId")), user.id);
+  } catch (e) {
+    redirect(`/client/work?error=${encodeURIComponent((e as Error).message)}`);
+  }
   revalidatePath("/client/work");
   redirect("/client/work");
 }
 
 export async function disputeDealAction(formData: FormData) {
   const user = await requireUser(["client", "freelancer"]);
-  await disputeDeal(String(formData.get("dealId")), user.id);
+  try {
+    await disputeDeal(String(formData.get("dealId")), user.id);
+  } catch (e) {
+    const base = user.role === "client" ? "/client/work" : "/freelancer/work";
+    redirect(`${base}?error=${encodeURIComponent((e as Error).message)}`);
+  }
   redirect(user.role === "client" ? "/client/work" : "/freelancer/work");
 }
 
 export async function depositAction(formData: FormData) {
-  const user = await requireUser(["client"]);
-  const amount = Number(formData.get("amount") ?? 0);
-  const network = String(formData.get("network") ?? "TRC20") as CryptoNetwork;
-  const deposit = await createDeposit({
-    userId: user.id,
-    amount,
-    asset: "USDT",
-    network,
-  });
-  // Demo: auto-confirm after create (simulates webhook)
-  await confirmDeposit(deposit.id);
-  redirect("/client/finance");
+  const user = await requireUser(["client", "freelancer"]);
+  const base = user.role === "client" ? "/client/finance" : "/freelancer/finance";
+  try {
+    const amount = Number(formData.get("amount") ?? 0);
+    const network = assertCryptoNetwork(String(formData.get("network") ?? "TRC20"));
+    const deposit = await createDeposit({
+      userId: user.id,
+      amount,
+      asset: "USDT",
+      network,
+    });
+    if (demoDepositAutoconfirmEnabled()) {
+      await confirmDeposit(deposit.id, {
+        actorUserId: user.id,
+        eventKey: `demo-auto:${deposit.id}`,
+        provider: "demo",
+      });
+      redirect(`${base}?tab=balance`);
+    }
+    redirect(
+      `${base}?tab=balance&deposit=${encodeURIComponent(deposit.id)}&awaiting=1`,
+    );
+  } catch (e) {
+    redirect(`${base}?error=${encodeURIComponent((e as Error).message)}`);
+  }
 }
 
 export async function withdrawAction(formData: FormData) {
   const user = await requireUser(["client", "freelancer"]);
+  const base = user.role === "client" ? "/client/finance" : "/freelancer/finance";
   try {
     await requestWithdraw({
       userId: user.id,
       amount: Number(formData.get("amount") ?? 0),
       asset: "USDT",
-      network: String(formData.get("network") ?? "TRC20") as CryptoNetwork,
+      network: assertCryptoNetwork(String(formData.get("network") ?? "TRC20")),
       address: String(formData.get("address") ?? ""),
     });
   } catch (e) {
-    const base = user.role === "client" ? "/client/finance" : "/freelancer/finance";
     redirect(`${base}?error=${encodeURIComponent((e as Error).message)}`);
   }
-  redirect(user.role === "client" ? "/client/finance" : "/freelancer/finance");
+  redirect(base);
 }
 
 export async function buyPrimeAction() {

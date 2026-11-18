@@ -23,6 +23,8 @@ export type EscrowStatus =
 export type LedgerKind =
   | "deposit"
   | "withdraw"
+  | "withdraw_hold"
+  | "withdraw_release"
   | "escrow_lock"
   | "escrow_release"
   | "escrow_refund"
@@ -88,6 +90,8 @@ export interface User {
   settings?: UserSettings;
   loginLog?: LoginSession[];
   deactivatedAt?: string | null;
+  /** ISO timestamp of last password/email/wallet change — gates withdrawals. */
+  sensitiveChangedAt?: string | null;
   createdAt: string;
 }
 
@@ -127,11 +131,15 @@ export interface Deal {
   freelancerId: string;
   bidId: string;
   amount: number;
+  /** Snapshot at deal creation — never re-read from live settings on release. */
   feePercent: number;
+  feeAmount: number;
   status: EscrowStatus;
   fundedAt?: string;
   deliveredAt?: string;
   releasedAt?: string;
+  disputedAt?: string;
+  fundingDeadlineAt?: string;
   createdAt: string;
 }
 
@@ -145,6 +153,8 @@ export interface LedgerEntry {
   note: string;
   txHash?: string;
   dealId?: string;
+  depositId?: string;
+  withdrawalId?: string;
   createdAt: string;
   settledAt?: string;
 }
@@ -152,6 +162,7 @@ export interface LedgerEntry {
 export interface WalletBalances {
   available: number;
   escrow: number;
+  pendingWithdraw: number;
 }
 
 export interface MessageAttachment {
@@ -220,6 +231,10 @@ export interface DepositRequest {
   network: CryptoNetwork;
   address: string;
   status: "awaiting" | "confirming" | "completed" | "expired";
+  txHash?: string;
+  providerRef?: string;
+  expiresAt: string;
+  completedAt?: string;
   createdAt: string;
 }
 
@@ -231,10 +246,58 @@ export interface WithdrawalRequest {
   network: CryptoNetwork;
   address: string;
   status: "pending" | "processing" | "completed" | "rejected";
+  txHash?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectReason?: string;
   createdAt: string;
 }
 
+export type AuditAction =
+  | "deposit.create"
+  | "deposit.confirm"
+  | "withdraw.request"
+  | "withdraw.approve"
+  | "withdraw.reject"
+  | "escrow.accept_bid"
+  | "escrow.fund"
+  | "escrow.deliver"
+  | "escrow.release"
+  | "escrow.dispute"
+  | "escrow.refund"
+  | "prime.buy"
+  | "auth.login"
+  | "auth.login_failed"
+  | "security.sensitive_change";
+
+export interface AuditLogEntry {
+  id: string;
+  at: string;
+  actorUserId?: string;
+  action: AuditAction;
+  entityType?: string;
+  entityId?: string;
+  ip?: string;
+  meta?: Record<string, string | number | boolean | null>;
+}
+
+export interface WebhookEvent {
+  id: string;
+  provider: string;
+  eventKey: string;
+  depositId?: string;
+  payloadHash: string;
+  status: "processed" | "ignored" | "rejected";
+  createdAt: string;
+}
+
+export interface DbMeta {
+  version: number;
+  financePolicyVersion: number;
+}
+
 export interface DbShape {
+  meta: DbMeta;
   users: User[];
   projects: Project[];
   bids: Bid[];
@@ -247,4 +310,6 @@ export interface DbShape {
   notifications: NotificationItem[];
   deposits: DepositRequest[];
   withdrawals: WithdrawalRequest[];
+  auditLog: AuditLogEntry[];
+  webhookEvents: WebhookEvent[];
 }
