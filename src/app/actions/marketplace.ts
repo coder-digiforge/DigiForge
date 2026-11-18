@@ -59,8 +59,10 @@ export async function createBidAction(formData: FormData) {
     transferCopyright: formData.get("transferCopyright") === "license",
     hideFromOthers: formData.get("hideFromOthers") === "on",
   });
+  revalidatePath(`/freelancer/projects`);
   revalidatePath(`/freelancer/projects/${projectId}`);
-  redirect(`/freelancer/bids`);
+  revalidatePath("/freelancer/bids");
+  redirect(`/freelancer/projects?project=${encodeURIComponent(projectId)}`);
 }
 
 export async function acceptBidAction(formData: FormData) {

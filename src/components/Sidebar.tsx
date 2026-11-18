@@ -106,7 +106,11 @@ export function ClientSidebar() {
 }
 
 export function FreelancerSidebar() {
+  const pathname = usePathname();
   const fresh = whatsNewFreshCount();
+  // На «Найти проект» место сайдбара занимает панель подбора
+  if (pathname.startsWith("/freelancer/projects")) return null;
+
   return (
     <aside className="df-panel !hidden h-fit w-full shrink-0 p-3 lg:!block lg:w-60">
       <NavGroup
