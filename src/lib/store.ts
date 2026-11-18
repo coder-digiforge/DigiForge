@@ -1,5 +1,4 @@
-import { promises as fs } from "fs";
-import path from "path";
+import { neon } from "@neondatabase/serverless";
 import { seedDb } from "./seed";
 import { DEFAULT_SETTINGS, defaultLoginLog } from "./settings";
 import type {
@@ -22,26 +21,45 @@ import type {
   WithdrawalRequest,
 } from "./types";
 
-const DATA_PATH = path.join(process.cwd(), ".data", "db.json");
+const STORE_ID = "main";
 
-async function ensureDir() {
-  await fs.mkdir(path.dirname(DATA_PATH), { recursive: true });
+function getSql() {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL не задан. Добавьте Neon connection string в переменные окружения.",
+    );
+  }
+  return neon(url);
 }
 
 async function readDb(): Promise<DbShape> {
-  try {
-    const raw = await fs.readFile(DATA_PATH, "utf8");
-    return JSON.parse(raw) as DbShape;
-  } catch {
-    await ensureDir();
-    await fs.writeFile(DATA_PATH, JSON.stringify(seedDb, null, 2), "utf8");
-    return structuredClone(seedDb);
+  const sql = getSql();
+  const rows = await sql`
+    SELECT payload
+    FROM app_store
+    WHERE id = ${STORE_ID}
+    LIMIT 1
+  `;
+
+  if (rows[0]?.payload) {
+    return rows[0].payload as DbShape;
   }
+
+  const fresh = structuredClone(seedDb);
+  await writeDb(fresh);
+  return fresh;
 }
 
 async function writeDb(db: DbShape) {
-  await ensureDir();
-  await fs.writeFile(DATA_PATH, JSON.stringify(db, null, 2), "utf8");
+  const sql = getSql();
+  await sql`
+    INSERT INTO app_store (id, payload, updated_at)
+    VALUES (${STORE_ID}, ${JSON.stringify(db)}::jsonb, now())
+    ON CONFLICT (id) DO UPDATE
+    SET payload = EXCLUDED.payload,
+        updated_at = now()
+  `;
 }
 
 export async function getDb() {
