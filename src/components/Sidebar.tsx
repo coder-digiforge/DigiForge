@@ -17,6 +17,7 @@ import {
   Crown,
   LifeBuoy,
   Gavel,
+  Search,
   Sparkles,
   Landmark,
   MessageCircle,
@@ -112,6 +113,7 @@ export function FreelancerSidebar() {
         title="Рабочая среда"
         items={[
           { href: "/freelancer", label: "Кабинет", icon: <LayoutDashboard size={16} /> },
+          { href: "/freelancer/projects", label: "Найти проект", icon: <Search size={16} /> },
           { href: "/freelancer/messages", label: "Переписки", icon: <MessageSquare size={16} /> },
           { href: "/freelancer/bids", label: "Ставки", icon: <Gavel size={16} /> },
           { href: "/freelancer/finance", label: "Финансы", icon: <Wallet size={16} /> },
