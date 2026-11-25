@@ -16,7 +16,7 @@ import { ReviewForm } from "@/components/ReviewForm";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Button, ButtonLink, EmptyState, PageTitle, Panel } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { getDb, listDealsForUser } from "@/lib/store";
+import { getDb, isDealReviewPairComplete, listDealsForUser } from "@/lib/store";
 import type { EscrowStatus } from "@/lib/types";
 
 const statusMeta: Record<
@@ -97,7 +97,8 @@ export default async function ClientWorkPage({
     const reviewed = db.reviews.some(
       (r) => r.dealId === d.id && r.fromUserId === user.id,
     );
-    return { deal: d, project, freelancer, thread, reviewed };
+    const reviewsPublished = isDealReviewPairComplete(db, d.id);
+    return { deal: d, project, freelancer, thread, reviewed, reviewsPublished };
   });
 
   return (
@@ -157,7 +158,7 @@ export default async function ClientWorkPage({
           />
         ) : (
           <div className="space-y-4">
-            {rows.map(({ deal: d, project, freelancer, thread, reviewed }) => {
+            {rows.map(({ deal: d, project, freelancer, thread, reviewed, reviewsPublished }) => {
               const meta = statusMeta[d.status];
               const canFund = d.status === "pending_funding";
               const canRelease = d.status === "delivered";
@@ -305,6 +306,13 @@ export default async function ClientWorkPage({
                         toUserId={freelancer.id}
                         toName={freelancer.name}
                       />
+                    </div>
+                  )}
+                  {d.status === "released" && reviewed && !reviewsPublished && (
+                    <div className="border-t border-border px-5 py-4 md:px-6">
+                      <p className="rounded-xl border border-border bg-panel-soft/60 px-4 py-3 text-sm text-muted">
+                        Ваш отзыв сохранён · станет виден, когда исполнитель ответит своим.
+                      </p>
                     </div>
                   )}
                 </article>

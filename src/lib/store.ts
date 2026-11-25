@@ -1107,6 +1107,27 @@ function releaseDealInDb(
     href: "/freelancer/finance",
     createdAt: now,
   });
+  // Client first — leave a review right after close.
+  db.notifications.push({
+    id: newId("n"),
+    userId: deal.clientId,
+    title: "Оставьте отзыв",
+    body: "Сделка закрыта · расскажите, как прошла работа. Отзывы станут видны, когда оба оставят ответ.",
+    read: false,
+    href: "/client/reviews",
+    initials: "★",
+    createdAt: now,
+  });
+  db.notifications.push({
+    id: newId("n"),
+    userId: deal.freelancerId,
+    title: "Оставьте отзыв",
+    body: "Сделка закрыта · оставьте отзыв о заказчике. Отзывы станут видны после взаимного обмена.",
+    read: false,
+    href: "/freelancer/reviews",
+    initials: "★",
+    createdAt: now,
+  });
   pushAudit(db, {
     actorUserId,
     action: "escrow.release",
@@ -1525,9 +1546,30 @@ export async function markNotificationsRead(userId: string) {
   });
 }
 
+/** Both sides must leave a review before either becomes public. */
+export function isDealReviewPairComplete(db: DbShape, dealId: string): boolean {
+  const forDeal = db.reviews.filter((r) => r.dealId === dealId);
+  if (forDeal.length < 2) return false;
+  const deal = db.deals.find((d) => d.id === dealId);
+  if (deal) {
+    return (
+      forDeal.some((r) => r.fromUserId === deal.clientId) &&
+      forDeal.some((r) => r.fromUserId === deal.freelancerId)
+    );
+  }
+  // Legacy / seed rows without a deal record: any two distinct authors.
+  return new Set(forDeal.map((r) => r.fromUserId)).size >= 2;
+}
+
+export function listPublishedReviewsForUser(db: DbShape, userId: string) {
+  return db.reviews.filter(
+    (r) => r.toUserId === userId && isDealReviewPairComplete(db, r.dealId),
+  );
+}
+
 export async function listReviewsForUser(userId: string) {
   const db = await readDb();
-  return db.reviews.filter((r) => r.toUserId === userId);
+  return listPublishedReviewsForUser(db, userId);
 }
 
 export async function listPortfolio(freelancerId: string) {
@@ -1819,7 +1861,7 @@ export async function deactivateUser(userId: string) {
 function applyReviewStats(db: DbShape, userId: string) {
   const user = db.users.find((u) => u.id === userId);
   if (!user) return;
-  const reviews = db.reviews.filter((r) => r.toUserId === userId);
+  const reviews = listPublishedReviewsForUser(db, userId);
   user.reviewCount = reviews.length;
   user.rating =
     reviews.length === 0
@@ -1827,6 +1869,14 @@ function applyReviewStats(db: DbShape, userId: string) {
       : Number(
           (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1),
         );
+}
+
+/** Recompute public rating for every user (e.g. after mutual-review policy). */
+export function recomputeAllReviewStats(db: DbShape) {
+  for (const user of db.users) {
+    if (user.role === "admin") continue;
+    applyReviewStats(db, user.id);
+  }
 }
 
 export async function adminSetUserActive(userId: string, active: boolean) {
@@ -2025,7 +2075,12 @@ export async function adminDeleteReview(reviewId: string) {
     const idx = db.reviews.findIndex((r) => r.id === reviewId);
     if (idx < 0) throw new Error("Отзыв не найден");
     const [removed] = db.reviews.splice(idx, 1);
+    const deal = db.deals.find((d) => d.id === removed.dealId);
     applyReviewStats(db, removed.toUserId);
+    if (deal) {
+      applyReviewStats(db, deal.clientId);
+      applyReviewStats(db, deal.freelancerId);
+    }
   });
 }
 
@@ -2054,25 +2109,63 @@ export async function addReview(input: Omit<Review, "id" | "createdAt">) {
       throw new Error("Вы уже оставили отзыв по этой сделке");
     }
     const rating = Math.min(5, Math.max(1, Math.round(input.rating)));
+    const now = new Date().toISOString();
     const review: Review = {
       ...input,
       rating,
       text: input.text.trim(),
       id: newId("r"),
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     };
     db.reviews.push(review);
-    applyReviewStats(db, input.toUserId);
-    db.notifications.push({
-      id: newId("n"),
-      userId: input.toUserId,
-      title: "Новый отзыв",
-      body: `Вам поставили ${rating}/5`,
-      read: false,
-      href: deal.clientId === input.toUserId ? "/client/reviews" : "/freelancer/reviews",
-      createdAt: new Date().toISOString(),
-    });
     created = review;
+
+    const pairComplete = isDealReviewPairComplete(db, deal.id);
+    const counterpartHref =
+      expectedTo === deal.clientId ? "/client/reviews" : "/freelancer/reviews";
+    const authorHref =
+      input.fromUserId === deal.clientId ? "/client/reviews" : "/freelancer/reviews";
+
+    if (pairComplete) {
+      applyReviewStats(db, deal.clientId);
+      applyReviewStats(db, deal.freelancerId);
+      const counterpartReview = db.reviews.find(
+        (r) => r.dealId === deal.id && r.fromUserId === expectedTo,
+      );
+      db.notifications.push({
+        id: newId("n"),
+        userId: expectedTo,
+        title: "Отзывы опубликованы",
+        body: `Вам поставили ${rating}/5 · оба отзыва по сделке теперь видны`,
+        read: false,
+        href: counterpartHref,
+        initials: "★",
+        createdAt: now,
+      });
+      if (counterpartReview) {
+        db.notifications.push({
+          id: newId("n"),
+          userId: input.fromUserId,
+          title: "Отзывы опубликованы",
+          body: `Вам поставили ${counterpartReview.rating}/5 · оба отзыва по сделке теперь видны`,
+          read: false,
+          href: authorHref,
+          initials: "★",
+          createdAt: now,
+        });
+      }
+    } else {
+      db.notifications.push({
+        id: newId("n"),
+        userId: expectedTo,
+        title: "Оставьте ответный отзыв",
+        body: "Вам оставили отзыв · он станет виден, когда вы ответите своим",
+        read: false,
+        href: counterpartHref,
+        initials: "★",
+        createdAt: now,
+      });
+    }
   });
   return created!;
 }
