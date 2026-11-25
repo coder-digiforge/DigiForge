@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { FolderKanban, Gavel } from "lucide-react";
+import { withdrawBidAction } from "@/app/actions/marketplace";
 import { ButtonLink, EmptyState, PageTitle, Panel } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
+import { formatProjectBudget } from "@/lib/project-budget";
 import { getDb, listBidsForFreelancer } from "@/lib/store";
 
 type Tab = "active" | "accepted" | "all";
@@ -39,10 +41,10 @@ function daysLabel(n: number) {
 export default async function FreelancerBidsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; error?: string }>;
 }) {
   const user = await requireUser(["freelancer"]);
-  const { tab: tabRaw } = await searchParams;
+  const { tab: tabRaw, error } = await searchParams;
   const tab: Tab =
     tabRaw === "accepted" || tabRaw === "all" || tabRaw === "active" ? tabRaw : "active";
 
@@ -76,6 +78,7 @@ export default async function FreelancerBidsPage({
             </ButtonLink>
           }
         />
+        {error && <p className="mt-3 text-sm text-danger">{error}</p>}
       </div>
 
       <div className="flex flex-wrap gap-2 border-b border-border px-6 py-3 md:px-8">
@@ -125,6 +128,7 @@ export default async function FreelancerBidsPage({
                   <th className="px-3 py-3 font-medium">Срок</th>
                   <th className="px-3 py-3 font-medium">Добавлено</th>
                   <th className="px-6 py-3 font-medium md:px-8">Статус</th>
+                  <th className="px-3 py-3 font-medium">Действия</th>
                 </tr>
               </thead>
               <tbody>
@@ -137,7 +141,7 @@ export default async function FreelancerBidsPage({
                     >
                       <td className="px-6 py-4 md:px-8">
                         <Link
-                          href={`/freelancer/projects/${b.projectId}`}
+                          href={`/freelancer/projects?project=${encodeURIComponent(b.projectId)}`}
                           className="group flex items-start gap-2.5"
                         >
                           <FolderKanban
@@ -158,9 +162,7 @@ export default async function FreelancerBidsPage({
                         </span>
                       </td>
                       <td className="px-3 py-4 text-muted">
-                        {project
-                          ? `${project.budgetMin}–${project.budgetMax} USDT`
-                          : "—"}
+                        {project ? formatProjectBudget(project) : "—"}
                       </td>
                       <td className="px-3 py-4">
                         <span className="inline-flex rounded-full border border-accent/35 bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-2.5 py-1 text-xs font-semibold text-accent">
@@ -181,6 +183,24 @@ export default async function FreelancerBidsPage({
                         >
                           {STATUS_LABEL[b.status] ?? b.status}
                         </span>
+                      </td>
+                      <td className="px-3 py-4">
+                        {b.status === "pending" && (
+                          <div className="flex flex-col gap-1">
+                            <Link
+                              href={`/freelancer/projects?project=${encodeURIComponent(b.projectId)}`}
+                              className="text-xs text-accent hover:underline"
+                            >
+                              Изменить
+                            </Link>
+                            <form action={withdrawBidAction}>
+                              <input type="hidden" name="bidId" value={b.id} />
+                              <button type="submit" className="text-xs text-danger hover:underline">
+                                Отозвать
+                              </button>
+                            </form>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );

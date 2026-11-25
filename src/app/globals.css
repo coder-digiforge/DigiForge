@@ -23,9 +23,14 @@
   --df-duration: 280ms;
   --df-glow: 0 0 24px rgba(224, 168, 107, 0.28);
   --df-glow-strong: 0 0 32px rgba(224, 168, 107, 0.42);
+  --scrollbar-size: 10px;
+  --scrollbar-track: #120e0a;
+  --scrollbar-thumb: #c9b8a4;
+  --scrollbar-thumb-hover: #e0a86b;
+  color-scheme: dark;
 }
 
-/* Пробная светлая тема — кабинет фрилансера */
+/* Светлая тема кабинетов (client / freelancer) */
 [data-theme="light"] {
   --bg: #f4efe8;
   --bg-deep: #ebe4db;
@@ -43,6 +48,9 @@
   --menu-bg: #fffaf4f5;
   --df-glow: 0 0 24px rgba(196, 132, 62, 0.18);
   --df-glow-strong: 0 0 32px rgba(196, 132, 62, 0.28);
+  --scrollbar-track: #ebe4db;
+  --scrollbar-thumb: #a89078;
+  --scrollbar-thumb-hover: #c4843e;
   color-scheme: light;
 }
 
@@ -65,6 +73,39 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 html {
@@ -121,7 +162,8 @@ body {
 }
 
 .df-scroll-hide {
-  scrollbar-width: none;
+  scrollbar-width: none !important;
+  scrollbar-color: transparent transparent !important;
   -ms-overflow-style: none;
 }
 

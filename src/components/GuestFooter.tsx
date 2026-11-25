@@ -16,8 +16,8 @@ const aboutLinks = [
 
 const legalLinks = [
   { href: "/support", label: "Поддержка" },
-  { href: null, label: "Условия" },
-  { href: null, label: "Конфиденциальность" },
+  { href: "/terms", label: "Условия" },
+  { href: "/privacy", label: "Конфиденциальность" },
 ] as const;
 
 function FooterColumn({

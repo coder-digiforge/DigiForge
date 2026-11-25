@@ -22,9 +22,10 @@ const FEE_POINTS = [
 ];
 
 const PRIME_POINTS = [
+  "60 дней DigiPrime бесплатно при регистрации",
   "Приоритет в каталоге исполнителей",
   "Заметные ставки и примеры работ",
-  "29 USDT / 30 дней · оплата в USDT",
+  "Продление позже — 29 USDT / 30 дней",
 ];
 
 export function PricingPanel({
@@ -163,13 +164,13 @@ export function PricingPanel({
             </div>
           </div>
           <div className="p-5 md:p-6">
-            <div className="font-[family-name:var(--font-syne)] text-3xl font-bold text-text">
-              29{" "}
-              <span className="text-lg font-semibold text-muted">USDT / 30 дн.</span>
+            <div className="font-[family-name:var(--font-syne)] text-3xl font-bold text-accent">
+              0{" "}
+              <span className="text-lg font-semibold text-muted">USDT · 60 дней</span>
             </div>
             <p className="mt-2 text-sm text-muted">
-              Заказчикам подключать не нужно. Prime помогает сильным исполнителям быть заметнее в
-              каталоге.
+              На запуске каждый новый фрилансер получает DigiPrime бесплатно. Заказчикам подключать
+              не нужно.
             </p>
             <ul className="mt-5 space-y-2.5">
               {PRIME_POINTS.map((item) => (

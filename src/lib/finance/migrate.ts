@@ -1,5 +1,6 @@
-import type { DbShape, Deal } from "@/lib/types";
+import type { DbShape, Deal, Project } from "@/lib/types";
 import { DEFAULT_FEE_PERCENT } from "./constants";
+import { normalizeProjectBudget } from "../project-budget";
 
 /** Normalize older JSON payloads so finance code can assume required fields. */
 export function ensureFinanceShape(db: DbShape): DbShape {
@@ -16,6 +17,19 @@ export function ensureFinanceShape(db: DbShape): DbShape {
   if (!Array.isArray(db.withdrawals)) db.withdrawals = [];
   if (!Array.isArray(db.ledger)) db.ledger = [];
   if (!Array.isArray(db.deals)) db.deals = [];
+  if (!Array.isArray(db.projects)) db.projects = [];
+  if (!Array.isArray(db.favorites)) db.favorites = [];
+
+  for (const project of db.projects as Array<
+    Project & { budgetMin?: number; budgetMax?: number }
+  >) {
+    const budget = normalizeProjectBudget(project);
+    project.budget = budget;
+    delete project.budgetMin;
+    delete project.budgetMax;
+    if (!Array.isArray(project.skills)) project.skills = project.skills ?? [];
+    if (!Array.isArray(project.attachments)) project.attachments = project.attachments ?? [];
+  }
 
   for (const deal of db.deals as Deal[]) {
     if (typeof deal.feePercent !== "number") deal.feePercent = DEFAULT_FEE_PERCENT;

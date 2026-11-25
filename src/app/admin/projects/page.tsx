@@ -101,7 +101,10 @@ export default async function AdminProjectsPage({
                     <div className="font-semibold">{p.title}</div>
                     <div className="mt-1 text-sm text-muted">
                       {client?.name ?? p.clientId} · {p.category} ·{" "}
-                      {p.budgetMin}–{p.budgetMax} USDT · {bids} ставок ·{" "}
+                      {p.budget != null && p.budget > 0
+                        ? `${p.budget} USDT`
+                        : "Не указан"}{" "}
+                      · {bids} ставок ·{" "}
                       {timeAgo(p.createdAt)}
                     </div>
                     <p className="mt-2 line-clamp-2 text-sm text-muted-2">{p.description}</p>

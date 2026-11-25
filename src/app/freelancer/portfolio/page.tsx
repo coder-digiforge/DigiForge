@@ -1,6 +1,11 @@
 import { PortfolioPanel } from "@/components/PortfolioPanel";
 import { requireUser } from "@/lib/auth";
-import { listPortfolio } from "@/lib/store";
+import { buildPortfolioAuthor } from "@/lib/portfolio-author";
+import {
+  listBidsForFreelancer,
+  listDealsForUser,
+  listPortfolio,
+} from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -25,11 +30,21 @@ export default async function PortfolioPage({
   const user = await requireUser(["freelancer"]);
   const { error } = await searchParams;
   const items = await listPortfolio(user.id);
+  const deals = await listDealsForUser(user.id);
+  const bids = await listBidsForFreelancer(user.id);
+  const author = buildPortfolioAuthor({
+    user,
+    deals,
+    bids,
+    portfolioCount: items.length,
+    profileHref: "/freelancer/public",
+    profileCta: "Обновить профиль",
+  });
 
   return (
     <PortfolioPanel
       error={error}
-      publicHref="/freelancer/public?tab=portfolio"
+      author={author}
       items={items.map((c) => ({
         id: c.id,
         title: c.title,
@@ -38,6 +53,7 @@ export default async function PortfolioPage({
         priceUsdt: c.priceUsdt,
         projectUrl: c.projectUrl,
         cover: coverFor(c.id, c.coverUrl),
+        createdAt: c.createdAt,
       }))}
     />
   );

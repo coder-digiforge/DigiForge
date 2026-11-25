@@ -1,3 +1,4 @@
+import { hashPassword } from "./password";
 import type { DbShape } from "./types";
 
 const now = new Date().toISOString();
@@ -15,6 +16,8 @@ export const seedDb: DbShape = {
       rating: 5,
       reviewCount: 0,
       twoFaEnabled: true,
+      sessionVersion: 0,
+      emailVerifiedAt: now,
       createdAt: now,
     },
     {
@@ -28,6 +31,8 @@ export const seedDb: DbShape = {
       rating: 4.9,
       reviewCount: 12,
       twoFaEnabled: false,
+      sessionVersion: 0,
+      emailVerifiedAt: now,
       createdAt: now,
     },
     {
@@ -45,6 +50,8 @@ export const seedDb: DbShape = {
       walletNetwork: "TRC20",
       walletAsset: "USDT",
       twoFaEnabled: false,
+      sessionVersion: 0,
+      emailVerifiedAt: now,
       digiPrimeUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 20).toISOString(),
       digiPrimeTrial: false,
       digiPrimeTrialUsed: true,
@@ -86,8 +93,7 @@ export const seedDb: DbShape = {
       description:
         "Нужен лендинг с меню, картой и формой бронирования. Темная эстетика, мобильная версия обязательна.",
       category: "Сайты и лендинги",
-      budgetMin: 800,
-      budgetMax: 1400,
+      budget: 800,
       currency: "USDT",
       deadlineDays: 14,
       status: "open",
@@ -101,8 +107,7 @@ export const seedDb: DbShape = {
       description:
         "Бот с каталогом товаров, корзиной и оплатой в USDT. Админ-панель для контента.",
       category: "AI и автоматизация",
-      budgetMin: 1200,
-      budgetMax: 2200,
+      budget: 1200,
       currency: "USDT",
       deadlineDays: 21,
       status: "open",
@@ -115,8 +120,7 @@ export const seedDb: DbShape = {
       title: "UI-kit мобильного приложения",
       description: "Дизайн-система и 8 ключевых экранов для fintech app.",
       category: "UI/UX дизайн",
-      budgetMin: 900,
-      budgetMax: 1600,
+      budget: 900,
       currency: "USDT",
       deadlineDays: 18,
       status: "in_progress",
@@ -130,8 +134,7 @@ export const seedDb: DbShape = {
       description:
         "Каталог, корзина, кабинет продавца и оплата в USDT. Нужен аккуратный UI и деплой.",
       category: "Сайты и лендинги",
-      budgetMin: 2500,
-      budgetMax: 4200,
+      budget: 2500,
       currency: "USDT",
       deadlineDays: 30,
       status: "open",
@@ -145,8 +148,7 @@ export const seedDb: DbShape = {
       description:
         "Figma: hero, тарифы, FAQ и мобильные состояния. Нужен сильный визуальный якорь.",
       category: "UI/UX дизайн",
-      budgetMin: 600,
-      budgetMax: 1100,
+      budget: 600,
       currency: "USDT",
       deadlineDays: 10,
       status: "open",
@@ -160,8 +162,7 @@ export const seedDb: DbShape = {
       description:
         "Клиентское приложение: карта, статус заказа, push. Backend уже есть — нужен фронт.",
       category: "Мобильные приложения",
-      budgetMin: 1800,
-      budgetMax: 3200,
+      budget: 1800,
       currency: "USDT",
       deadlineDays: 28,
       status: "open",
@@ -175,8 +176,7 @@ export const seedDb: DbShape = {
       description:
         "Ежедневный дайджест метрик из Google Sheets в Telegram-канал + алерты по порогам.",
       category: "AI и автоматизация",
-      budgetMin: 500,
-      budgetMax: 900,
+      budget: 500,
       currency: "USDT",
       deadlineDays: 7,
       status: "open",
@@ -190,8 +190,7 @@ export const seedDb: DbShape = {
       description:
         "Позиционирование, 12 постов и одностраничник под waitlist. Крипто-аудитория EU.",
       category: "Маркетинг и рост",
-      budgetMin: 700,
-      budgetMax: 1300,
+      budget: 700,
       currency: "USDT",
       deadlineDays: 12,
       status: "open",
@@ -205,8 +204,7 @@ export const seedDb: DbShape = {
       description:
         "Карта гипотез, JTBD-интервью гайд и приоритизация бэклога на 6 недель.",
       category: "Стратегия продукта",
-      budgetMin: 1100,
-      budgetMax: 1900,
+      budget: null,
       currency: "USDT",
       deadlineDays: 16,
       status: "open",
@@ -461,6 +459,7 @@ export const seedDb: DbShape = {
       createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 48).toISOString(),
     },
   ],
+  favorites: [],
   portfolio: [
     {
       id: "c-1",
@@ -608,3 +607,56 @@ export const seedDb: DbShape = {
   auditLog: [],
   webhookEvents: [],
 };
+
+/** Demo users with known passwords — only for local / explicit ALLOW_DEMO_SEED. */
+export function allowDemoSeed() {
+  if (process.env.ALLOW_DEMO_SEED === "true") return true;
+  if (process.env.ALLOW_DEMO_SEED === "false") return false;
+  return process.env.NODE_ENV !== "production";
+}
+
+export function emptySeedDb(): DbShape {
+  return {
+    meta: { version: 1, financePolicyVersion: 1 },
+    users: [],
+    projects: [],
+    bids: [],
+    deals: [],
+    ledger: [],
+    threads: [],
+    messages: [],
+    reviews: [],
+    portfolio: [],
+    favorites: [],
+    notifications: [],
+    deposits: [],
+    withdrawals: [],
+    auditLog: [],
+    webhookEvents: [],
+  };
+}
+
+export function getBootstrapDb(): DbShape {
+  if (allowDemoSeed()) return structuredClone(seedDb);
+  const db = emptySeedDb();
+  const email = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
+  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD ?? "";
+  if (email && password.length >= 8) {
+    const now = new Date().toISOString();
+    db.users.push({
+      id: "u-admin",
+      email,
+      password: hashPassword(password),
+      name: process.env.BOOTSTRAP_ADMIN_NAME?.trim() || "Admin",
+      role: "admin",
+      skills: [],
+      rating: 0,
+      reviewCount: 0,
+      twoFaEnabled: false,
+      sessionVersion: 0,
+      emailVerifiedAt: now,
+      createdAt: now,
+    });
+  }
+  return db;
+}

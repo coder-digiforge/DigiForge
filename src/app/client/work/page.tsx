@@ -12,6 +12,7 @@ import {
   fundDealAction,
   releaseDealAction,
 } from "@/app/actions/marketplace";
+import { ReviewForm } from "@/components/ReviewForm";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Button, ButtonLink, EmptyState, PageTitle, Panel } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
@@ -93,7 +94,10 @@ export default async function ClientWorkPage({
         t.participantIds.includes(user.id) &&
         t.participantIds.includes(d.freelancerId),
     );
-    return { deal: d, project, freelancer, thread };
+    const reviewed = db.reviews.some(
+      (r) => r.dealId === d.id && r.fromUserId === user.id,
+    );
+    return { deal: d, project, freelancer, thread, reviewed };
   });
 
   return (
@@ -153,7 +157,7 @@ export default async function ClientWorkPage({
           />
         ) : (
           <div className="space-y-4">
-            {rows.map(({ deal: d, project, freelancer, thread }) => {
+            {rows.map(({ deal: d, project, freelancer, thread, reviewed }) => {
               const meta = statusMeta[d.status];
               const canFund = d.status === "pending_funding";
               const canRelease = d.status === "delivered";
@@ -294,6 +298,15 @@ export default async function ClientWorkPage({
                       </form>
                     )}
                   </div>
+                  {d.status === "released" && !reviewed && freelancer && (
+                    <div className="border-t border-border px-5 py-4 md:px-6">
+                      <ReviewForm
+                        dealId={d.id}
+                        toUserId={freelancer.id}
+                        toName={freelancer.name}
+                      />
+                    </div>
+                  )}
                 </article>
               );
             })}

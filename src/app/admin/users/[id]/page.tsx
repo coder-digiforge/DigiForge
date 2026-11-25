@@ -135,7 +135,10 @@ export default async function AdminUserDetailPage({
                 >
                   <div className="font-semibold">{p.title}</div>
                   <div className="text-xs text-muted">
-                    {p.budgetMin}–{p.budgetMax} USDT · {p.status}
+                    {p.budget != null && p.budget > 0
+                      ? `${p.budget} USDT`
+                      : "Не указан"}{" "}
+                    · {p.status}
                   </div>
                 </li>
               ))}

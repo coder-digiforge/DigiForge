@@ -1,34 +1,53 @@
--- DigiForge Neon / Lakebase schema (finance-hardened)
--- Ready for migration from JSON app_store document.
+-- DigiForge Neon schema (finance-hardened)
+-- Apply in Neon SQL Editor, then set STORE_MODE=relational and run npm run db:migrate
 
-create type user_role as enum ('client', 'freelancer', 'admin');
-create type crypto_network as enum ('TRC20', 'ERC20');
-create type crypto_asset as enum ('USDT');
-create type project_status as enum ('open', 'in_progress', 'delivered', 'completed', 'disputed', 'cancelled');
-create type escrow_status as enum (
-  'pending_funding',
-  'funded',
-  'in_progress',
-  'delivered',
-  'released',
-  'disputed',
-  'refunded'
-);
-create type ledger_kind as enum (
-  'deposit',
-  'withdraw',
-  'withdraw_hold',
-  'withdraw_release',
-  'escrow_lock',
-  'escrow_release',
-  'escrow_refund',
-  'fee',
-  'prime'
-);
-create type deposit_status as enum ('awaiting', 'confirming', 'completed', 'expired');
-create type withdrawal_status as enum ('pending', 'processing', 'completed', 'rejected');
+create extension if not exists pgcrypto;
 
-create table users (
+do $$ begin
+  create type user_role as enum ('client', 'freelancer', 'admin');
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create type crypto_network as enum ('TRC20', 'ERC20');
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create type crypto_asset as enum ('USDT');
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create type project_status as enum ('open', 'in_progress', 'delivered', 'completed', 'disputed', 'cancelled');
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create type escrow_status as enum (
+    'pending_funding', 'funded', 'in_progress', 'delivered', 'released', 'disputed', 'refunded'
+  );
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create type ledger_kind as enum (
+    'deposit', 'withdraw', 'withdraw_hold', 'withdraw_release',
+    'escrow_lock', 'escrow_release', 'escrow_refund', 'fee', 'prime'
+  );
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create type deposit_status as enum ('awaiting', 'confirming', 'completed', 'expired');
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create type withdrawal_status as enum ('pending', 'processing', 'completed', 'rejected');
+exception when duplicate_object then null; end $$;
+
+-- Full document mirror (CAS) while nested UI fields migrate
+create table if not exists app_store (
+  id text primary key,
+  payload jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists store_meta (
+  id text primary key,
+  version int not null default 0,
+  finance_policy_version int not null default 1,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists users (
   id text primary key,
   email text unique not null,
   password_hash text not null,
@@ -43,20 +62,26 @@ create table users (
   wallet_network crypto_network,
   wallet_asset crypto_asset,
   two_fa_enabled boolean not null default false,
+  two_fa_secret text,
+  two_fa_pending_secret text,
+  session_version int not null default 0,
+  email_verified_at timestamptz,
+  email_verify_token_hash text,
+  email_verify_expires_at timestamptz,
   digi_prime_until timestamptz,
   sensitive_changed_at timestamptz,
   deactivated_at timestamptz,
+  profile_json jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
 
-create table projects (
+create table if not exists projects (
   id text primary key,
   client_id text not null references users(id),
   title text not null,
   description text not null,
   category text not null,
-  budget_min numeric(18,2) not null,
-  budget_max numeric(18,2) not null,
+  budget numeric(18,2),
   currency text not null default 'USDT',
   deadline_days int not null,
   status project_status not null default 'open',
@@ -64,7 +89,7 @@ create table projects (
   created_at timestamptz not null default now()
 );
 
-create table bids (
+create table if not exists bids (
   id text primary key,
   project_id text not null references projects(id),
   freelancer_id text not null references users(id),
@@ -77,7 +102,7 @@ create table bids (
   created_at timestamptz not null default now()
 );
 
-create table deals (
+create table if not exists deals (
   id text primary key,
   project_id text not null references projects(id),
   client_id text not null references users(id),
@@ -92,11 +117,11 @@ create table deals (
   released_at timestamptz,
   disputed_at timestamptz,
   funding_deadline_at timestamptz,
-  created_at timestamptz not null default now(),
-  constraint deals_fee_invariant check (fee_amount = round(amount * fee_percent / 100.0, 2))
+  auto_release_at timestamptz,
+  created_at timestamptz not null default now()
 );
 
-create table ledger_entries (
+create table if not exists ledger_entries (
   id text primary key,
   user_id text not null references users(id),
   kind ledger_kind not null,
@@ -112,20 +137,18 @@ create table ledger_entries (
   settled_at timestamptz
 );
 
--- Idempotency: one on-chain tx cannot credit twice
-create unique index ledger_tx_hash_uidx on ledger_entries (tx_hash) where tx_hash is not null;
--- One escrow lock / release / refund / fee set per deal kind
-create unique index ledger_deal_kind_uidx
+create unique index if not exists ledger_tx_hash_uidx on ledger_entries (tx_hash) where tx_hash is not null;
+create unique index if not exists ledger_deal_kind_uidx
   on ledger_entries (deal_id, kind)
   where deal_id is not null and kind in ('escrow_lock', 'escrow_release', 'escrow_refund', 'fee');
-create unique index ledger_deposit_uidx
+create unique index if not exists ledger_deposit_uidx
   on ledger_entries (deposit_id)
   where deposit_id is not null and kind = 'deposit';
-create unique index ledger_withdraw_hold_uidx
+create unique index if not exists ledger_withdraw_hold_uidx
   on ledger_entries (withdrawal_id)
   where withdrawal_id is not null and kind = 'withdraw_hold';
 
-create table threads (
+create table if not exists threads (
   id text primary key,
   deal_id text references deals(id),
   project_id text references projects(id),
@@ -133,21 +156,22 @@ create table threads (
   updated_at timestamptz not null default now()
 );
 
-create table thread_participants (
+create table if not exists thread_participants (
   thread_id text not null references threads(id),
   user_id text not null references users(id),
   primary key (thread_id, user_id)
 );
 
-create table messages (
+create table if not exists messages (
   id text primary key,
   thread_id text not null references threads(id),
   sender_id text not null references users(id),
   body text not null,
+  attachment_json jsonb,
   created_at timestamptz not null default now()
 );
 
-create table reviews (
+create table if not exists reviews (
   id text primary key,
   from_user_id text not null references users(id),
   to_user_id text not null references users(id),
@@ -157,17 +181,19 @@ create table reviews (
   created_at timestamptz not null default now()
 );
 
-create table portfolio_cases (
+create table if not exists portfolio_cases (
   id text primary key,
   freelancer_id text not null references users(id),
   title text not null,
   summary text not null,
   tags text[] not null default '{}',
   cover_url text,
+  price_usdt numeric(18,2),
+  project_url text,
   created_at timestamptz not null default now()
 );
 
-create table notifications (
+create table if not exists notifications (
   id text primary key,
   user_id text not null references users(id),
   title text not null,
@@ -177,7 +203,7 @@ create table notifications (
   created_at timestamptz not null default now()
 );
 
-create table deposits (
+create table if not exists deposits (
   id text primary key,
   user_id text not null references users(id),
   amount numeric(18,2) not null check (amount > 0),
@@ -187,12 +213,16 @@ create table deposits (
   status deposit_status not null,
   tx_hash text unique,
   provider_ref text,
+  invoice_url text,
+  pay_amount numeric(18,2),
+  pay_currency text,
+  provider_simulated boolean not null default false,
   expires_at timestamptz not null,
   completed_at timestamptz,
   created_at timestamptz not null default now()
 );
 
-create table withdrawals (
+create table if not exists withdrawals (
   id text primary key,
   user_id text not null references users(id),
   amount numeric(18,2) not null check (amount > 0),
@@ -201,13 +231,15 @@ create table withdrawals (
   address text not null,
   status withdrawal_status not null,
   tx_hash text unique,
+  provider_ref text,
+  provider_simulated boolean not null default false,
   reviewed_by text references users(id),
   reviewed_at timestamptz,
   reject_reason text,
   created_at timestamptz not null default now()
 );
 
-create table audit_log (
+create table if not exists audit_log (
   id text primary key,
   at timestamptz not null default now(),
   actor_user_id text references users(id),
@@ -218,7 +250,7 @@ create table audit_log (
   meta jsonb not null default '{}'::jsonb
 );
 
-create table webhook_events (
+create table if not exists webhook_events (
   id text primary key,
   provider text not null,
   event_key text not null,
@@ -229,7 +261,15 @@ create table webhook_events (
   unique (provider, event_key)
 );
 
-create index audit_log_at_idx on audit_log (at desc);
-create index ledger_user_created_idx on ledger_entries (user_id, created_at desc);
-create index deals_status_idx on deals (status);
-create index withdrawals_status_idx on withdrawals (status);
+create table if not exists rate_limit_buckets (
+  bucket_key text primary key,
+  timestamps timestamptz[] not null default '{}',
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists audit_log_at_idx on audit_log (at desc);
+create index if not exists ledger_user_created_idx on ledger_entries (user_id, created_at desc);
+create index if not exists deals_status_idx on deals (status);
+create index if not exists deals_auto_release_idx on deals (auto_release_at) where auto_release_at is not null;
+create index if not exists withdrawals_status_idx on withdrawals (status);
+create index if not exists deposits_status_idx on deposits (status);

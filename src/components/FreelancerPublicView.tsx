@@ -1,8 +1,10 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Crown, ShieldCheck, Star } from "lucide-react";
 import { PortfolioGallery } from "@/components/PortfolioGallery";
 import { UserAvatar } from "@/components/UserAvatar";
 import { ButtonLink, Chip, Panel } from "@/components/ui";
+import type { PortfolioAuthor } from "@/lib/portfolio-author";
 import type { PortfolioCase, Review, User } from "@/lib/types";
 
 const COVER_FALLBACKS = [
@@ -22,14 +24,18 @@ export function FreelancerPublicView({
   user,
   portfolio,
   reviews,
+  author,
   basePath = "/freelancers",
   variant = "public",
+  sidebarExtra,
 }: {
   user: User;
   portfolio: PortfolioCase[];
   reviews: Review[];
+  author?: PortfolioAuthor;
   basePath?: string;
   variant?: "public" | "cabinet";
+  sidebarExtra?: ReactNode;
 }) {
   const primeActive =
     Boolean(user.digiPrimeUntil) && new Date(user.digiPrimeUntil!).getTime() > Date.now();
@@ -93,6 +99,7 @@ export function FreelancerPublicView({
             ) : (
               <div className="mt-4">
                 <PortfolioGallery
+                  author={author}
                   items={portfolio.map((c) => ({
                     id: c.id,
                     title: c.title,
@@ -101,6 +108,7 @@ export function FreelancerPublicView({
                     priceUsdt: c.priceUsdt,
                     projectUrl: c.projectUrl,
                     cover: coverFor(c.id, c.coverUrl),
+                    createdAt: c.createdAt,
                   }))}
                 />
               </div>
@@ -170,6 +178,7 @@ export function FreelancerPublicView({
                 К каталогу
               </ButtonLink>
             </div>
+            {sidebarExtra && <div className="mt-5 border-t border-border pt-5">{sidebarExtra}</div>}
             <p className="mt-4 inline-flex items-center justify-center gap-1.5 text-[11px] text-muted">
               <ShieldCheck size={12} className="text-accent" />
               Оплата через эскроу USDT

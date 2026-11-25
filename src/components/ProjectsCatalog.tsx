@@ -176,6 +176,15 @@ export async function ProjectsCatalog({
             status: myBidRow.status,
           }
         : null,
+      favorited: Boolean(
+        viewerId &&
+          db.favorites?.some(
+            (f) =>
+              f.userId === viewerId &&
+              f.targetType === "project" &&
+              f.targetId === project.id,
+          ),
+      ),
       hasMyBid: Boolean(myBidRow),
       score: matchScore(project, viewerSkills),
     };
@@ -196,12 +205,11 @@ export async function ProjectsCatalog({
     ? initialProjectRaw[0]
     : initialProjectRaw;
 
+  const withBudget = openAll.filter((p) => p.budget != null && p.budget > 0);
   const avgBudget =
-    openAll.length === 0
+    withBudget.length === 0
       ? 0
-      : Math.round(
-          openAll.reduce((s, p) => s + (p.budgetMin + p.budgetMax) / 2, 0) / openAll.length,
-        );
+      : Math.round(withBudget.reduce((s, p) => s + (p.budget ?? 0), 0) / withBudget.length);
   const hiddenCount = openAll.filter((p) => p.bidsHidden).length;
   const matchedCount = rowsRaw.filter((r) => r.score > 0).length;
 
@@ -319,6 +327,7 @@ export async function ProjectsCatalog({
           {(
             [
               ["any", "Любой"],
+              ["none", "Не указан"],
               ["lt1k", "до 1 000 USDT"],
               ["1to2k", "1 000–2 000"],
               ["gte2k", "от 2 000"],

@@ -74,7 +74,7 @@ export function DigiPrimePanel({
   const left = until ? daysLeft(until) : 0;
   const subtitle = active
     ? trial
-      ? `Триал активен · ${left} дн. до списания`
+      ? `Запуск: DigiPrime бесплатно · ещё ${left} дн.`
       : `Активен до ${formatUntil(until!)}`
     : "Планы · базовый аккаунт";
 
@@ -131,41 +131,30 @@ export function DigiPrimePanel({
               Digi Prime
               <Crown size={20} className="text-accent" />
             </h2>
-            {!trialUsed ? (
-              <>
-                <div className="mt-3 font-[family-name:var(--font-syne)] text-3xl font-bold text-accent">
-                  0 USDT
-                  <span className="ml-2 text-base font-semibold text-muted">на 2 месяца</span>
-                </div>
-                <p className="mt-1 text-sm text-muted">Затем 29 USDT / 30 дней</p>
-                <form action={startPrimeTrialAction} className="mt-5">
-                  <Button type="submit" className="w-full !rounded-full shadow-[var(--df-glow)]">
-                    Попробовать бесплатно
-                  </Button>
-                </form>
-                <p className="mt-2 text-center text-xs text-muted">
-                  Подписку можно отключить в любой момент
-                </p>
-              </>
+            <div className="mt-3 font-[family-name:var(--font-syne)] text-3xl font-bold text-accent">
+              0 USDT
+              <span className="ml-2 text-base font-semibold text-muted">60 дней при регистрации</span>
+            </div>
+            <p className="mt-1 text-sm text-muted">
+              На этапе запуска Prime выдаётся бесплатно всем новым фрилансерам. Продление — 29 USDT /
+              30 дней, когда понадобится.
+            </p>
+            {trialUsed ? (
+              <form action={buyPrimeAction} className="mt-5">
+                <Button type="submit" className="w-full !rounded-full shadow-[var(--df-glow)]">
+                  Продлить Digi Prime · 29 USDT
+                </Button>
+              </form>
             ) : (
-              <>
-                <div className="mt-3 font-[family-name:var(--font-syne)] text-3xl font-bold text-accent">
-                  29 USDT
-                  <span className="ml-2 text-base font-semibold text-muted">/ 30 дней</span>
-                </div>
-                <p className="mt-1 text-sm text-muted">
-                  Баланс: {balanceUsdt.toLocaleString("ru-RU")} USDT
-                </p>
-                <form action={buyPrimeAction} className="mt-5">
-                  <Button type="submit" className="w-full !rounded-full shadow-[var(--df-glow)]">
-                    Оплатить Digi Prime
-                  </Button>
-                </form>
-                <p className="mt-2 text-center text-xs text-muted">
-                  Списание с доступного баланса кабинета
-                </p>
-              </>
+              <form action={startPrimeTrialAction} className="mt-5">
+                <Button type="submit" className="w-full !rounded-full shadow-[var(--df-glow)]">
+                  Активировать 60 дней бесплатно
+                </Button>
+              </form>
             )}
+            <p className="mt-2 text-center text-xs text-muted">
+              Баланс: {balanceUsdt.toLocaleString("ru-RU")} USDT · автопродление можно выключить
+            </p>
             <PerkList items={PRIME_PERKS} tone="accent" />
           </Panel>
         </div>
@@ -201,7 +190,7 @@ export function DigiPrimePanel({
 
               <div className="mt-4 rounded-xl border border-border bg-panel-soft/60 px-4 py-3 text-sm leading-relaxed text-muted">
                 {trial
-                  ? `Триал действует ${left} дн. После окончания спишется 29 USDT / 30 дней с баланса, если автопродление включено.`
+                  ? `Запуск: DigiPrime бесплатно ещё ${left} дн. Автопродление по умолчанию выключено — после срока ничего не спишется, пока вы сами не продлите.`
                   : `Подписка активна. Следующее продление — 29 USDT / 30 дней${autoRenew ? "" : " (сейчас отключено)"}.`}
               </div>
 
@@ -238,9 +227,13 @@ export function DigiPrimePanel({
                   <div className="mt-1 text-sm font-semibold text-text">29 USDT / 30 дней</div>
                 </div>
                 <div className="rounded-xl border border-border bg-panel-soft/50 px-4 py-3">
-                  <div className="text-xs text-muted">Первое списание</div>
+                  <div className="text-xs text-muted">Списание</div>
                   <div className="mt-1 text-sm font-semibold text-text">
-                    {trial ? "после триала" : formatUntil(until!)}
+                    {trial
+                      ? autoRenew
+                        ? "после бесплатного периода"
+                        : "только при ручном продлении"
+                      : formatUntil(until!)}
                   </div>
                 </div>
               </div>
@@ -288,13 +281,13 @@ export function DigiPrimePanel({
               </div>
               <h3 className="font-[family-name:var(--font-syne)] text-xl font-bold leading-snug text-text">
                 {trial
-                  ? `Ваш триал Prime · ${left} дн. до первого списания`
+                  ? `Бесплатный Prime · ещё ${left} дн.`
                   : `Prime активен · ещё ${left} дн.`}
               </h3>
               <p className="mt-2 text-sm text-muted">
                 {autoRenew
                   ? "Продлится автоматически за 29 USDT / 30 дней."
-                  : "Автопродление выключено — подписка закончится в указанную дату."}
+                  : "Автопродление выключено — после даты ничего не спишется."}
               </p>
             </Panel>
 

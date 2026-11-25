@@ -3,7 +3,7 @@ import { ArrowDownLeft, ArrowUpRight, Lock, Shield, Wallet } from "lucide-react"
 import { depositAction, withdrawAction } from "@/app/actions/marketplace";
 import { Button, ButtonLink, Input, PageTitle, Panel } from "@/components/ui";
 import { WITHDRAW_REQUIRES_2FA_USDT } from "@/lib/finance/constants";
-import type { LedgerEntry, LedgerKind, WalletBalances } from "@/lib/types";
+import type { DepositRequest, LedgerEntry, LedgerKind, WalletBalances } from "@/lib/types";
 
 export type FinanceTab = "balance" | "safe" | "services" | "archive" | "stats";
 
@@ -71,6 +71,7 @@ function formatUsdt(n: number) {
 export function FinancePanel({
   balances,
   ledger,
+  pendingDeposits = [],
   error,
   role,
   walletAddress,
@@ -80,6 +81,7 @@ export function FinancePanel({
 }: {
   balances: WalletBalances;
   ledger: LedgerEntry[];
+  pendingDeposits?: DepositRequest[];
   error?: string;
   role: "client" | "freelancer";
   walletAddress?: string;
@@ -222,6 +224,38 @@ export function FinancePanel({
                 </Button>
               </form>
 
+              {pendingDeposits.length > 0 ? (
+                <div className="space-y-3 rounded-2xl border border-border bg-panel-soft/50 p-4 lg:col-span-2">
+                  <h3 className="font-[family-name:var(--font-syne)] text-base font-semibold">
+                    Ожидают оплаты
+                  </h3>
+                  {pendingDeposits.map((d) => (
+                    <div
+                      key={d.id}
+                      className="rounded-xl border border-border/70 bg-panel p-3 text-sm"
+                    >
+                      <div className="font-semibold text-text">
+                        {d.amount} USDT · {d.network}
+                        {d.providerSimulated ? (
+                          <span className="ml-2 text-xs font-normal text-muted">(sim)</span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 break-all text-xs text-muted">Адрес: {d.address}</p>
+                      {d.invoiceUrl ? (
+                        <a
+                          href={d.invoiceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-2 inline-block text-xs font-semibold text-accent underline"
+                        >
+                          Открыть invoice
+                        </a>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
               <form action={withdrawAction} className="space-y-3">
                 <h3 className="font-[family-name:var(--font-syne)] text-lg font-semibold">
                   Вывести
@@ -248,6 +282,14 @@ export function FinancePanel({
                   <option value="TRC20">TRC20</option>
                   <option value="ERC20">ERC20</option>
                 </select>
+                <Input
+                  name="totpCode"
+                  inputMode="numeric"
+                  placeholder={`Код 2FA (от ${WITHDRAW_REQUIRES_2FA_USDT} USDT)`}
+                />
+                <p className="text-xs text-muted">
+                  Нужны подтверждённый email и TOTP для крупных сумм.
+                </p>
                 <Button type="submit" className="!rounded-full">
                   Запросить вывод
                 </Button>

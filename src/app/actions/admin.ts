@@ -17,11 +17,14 @@ function revalidateAdmin() {
 
 export async function adminResolveAction(formData: FormData) {
   const admin = await requireUser(["admin"]);
-  await adminResolveDeal(
-    String(formData.get("dealId")),
-    String(formData.get("resolution")) as "release" | "refund",
-    admin.id,
-  );
+  const resolution = String(formData.get("resolution")) as
+    | "release"
+    | "refund"
+    | "partial_refund";
+  const refundRaw = String(formData.get("refundAmount") ?? "").trim();
+  await adminResolveDeal(String(formData.get("dealId")), resolution, admin.id, {
+    refundAmount: refundRaw ? Number(refundRaw) : undefined,
+  });
   revalidateAdmin();
   redirect("/admin/deals");
 }

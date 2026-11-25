@@ -327,16 +327,16 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-[1440px] px-6 py-16 md:px-12 lg:px-20">
+      <section className="mx-auto max-w-[1440px] px-5 py-12 sm:px-6 sm:py-16 md:px-12 lg:px-20">
         <div className="mx-auto max-w-3xl text-center">
-          <h2 className="font-[family-name:var(--font-syne)] text-3xl font-bold">
+          <h2 className="font-[family-name:var(--font-syne)] text-2xl font-bold sm:text-3xl">
             Какие услуги заказывают на бирже
           </h2>
-          <p className="mt-3 text-muted">
+          <p className="mt-3 text-sm text-muted sm:text-base">
             От сайта и приложения до AI и роста — под задачу, с понятным бюджетом в USDT.
           </p>
         </div>
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 grid gap-3 sm:mt-8 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
           {categories.map((c) => (
             <Panel
               key={c.title}
@@ -358,16 +358,16 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-[1440px] px-6 py-16 md:px-12 lg:px-20">
+      <section className="mx-auto max-w-[1440px] px-5 py-12 sm:px-6 sm:py-16 md:px-12 lg:px-20">
         <div className="mx-auto max-w-3xl text-center">
-          <h2 className="font-[family-name:var(--font-syne)] text-3xl font-bold">
+          <h2 className="font-[family-name:var(--font-syne)] text-2xl font-bold sm:text-3xl">
             Как работает фриланс-биржа
           </h2>
-          <p className="mt-3 text-muted">
+          <p className="mt-3 text-sm text-muted sm:text-base">
             Три шага от брифа до оплаты: без найма в штат и без риска предоплаты.
           </p>
         </div>
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
+        <div className="mt-6 grid gap-3 sm:mt-8 sm:gap-4 md:grid-cols-3">
           {steps.map((s) => (
             <Panel
               key={s.title}

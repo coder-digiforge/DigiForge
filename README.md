@@ -11,35 +11,33 @@
 
 ## Запуск
 
-1. Скопируйте `.env.example` → `.env` и вставьте Neon **pooled** connection string в `DATABASE_URL`.
-2. В Neon SQL Editor один раз выполните:
-
-```sql
-CREATE TABLE IF NOT EXISTS app_store (
-  id text PRIMARY KEY,
-  payload jsonb NOT NULL,
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-```
-
-3. Установите зависимости и запустите:
+1. Скопируйте `.env.example` → `.env` и заполните минимум `DATABASE_URL`.
+2. Установите зависимости и поднимите схему:
 
 ```bash
 npm install
+npm run db:setup
 npm run dev
 ```
 
-Откройте [http://localhost:3000](http://localhost:3000).
+Откройте [http://localhost:3000](http://localhost:3000).  
+Готовность: `npm run ready` или `GET /api/health`.
 
-На Vercel добавьте ту же переменную `DATABASE_URL` (Production + Preview).
+### Production
 
-## Демо-аккаунты
+Обязательны: `NEON_AUTH_COOKIE_SECRET`, `CRYPTOPAY_API_KEY`, `CRYPTOPAY_IPN_SECRET`, `RESEND_API_KEY`, `CRON_SECRET`, `NEXT_PUBLIC_APP_URL`, `STORE_MODE=relational`, `ALLOW_DEMO_*=false`, плюс `BOOTSTRAP_ADMIN_*` для первого админа. Без ключей деплой падает на readiness check.
+
+## Демо-аккаунты (только local / `ALLOW_DEMO_SEED=true`)
+
+В production seed без демо-логинов (`ALLOW_DEMO_SEED=false`). Для локалки:
 
 | Роль | Email | Пароль |
 |------|-------|--------|
 | Заказчик | anna@client.io | demo1234 |
 | Фрилансер | sergey@freelancer.io | demo1234 |
 | Admin | admin@digiforge.io | admin123 |
+
+Smoke-чеклист: [docs/SMOKE.md](docs/SMOKE.md). Юр. страницы: `/terms`, `/privacy`.
 
 ## Крипто-поток (finance-hardened)
 

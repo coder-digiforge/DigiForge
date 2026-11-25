@@ -16,7 +16,12 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { createBidAction } from "@/app/actions/marketplace";
+import {
+  createBidAction,
+  updateBidAction,
+  withdrawBidAction,
+} from "@/app/actions/marketplace";
+import { FavoriteButton } from "@/components/FavoriteButton";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Button, ButtonLink, EmptyState, Input, Panel, Textarea } from "@/components/ui";
 import { formatPostedAgo } from "@/lib/project-catalog";
@@ -62,6 +67,7 @@ export type ProjectCatalogItem = {
   bids: ProjectBidPreview[];
   discussions: ProjectDiscussion[];
   myBid: Pick<Bid, "id" | "amount" | "days" | "comment" | "status"> | null;
+  favorited?: boolean;
   score: number;
   views: number;
 };
@@ -169,9 +175,9 @@ export function ProjectCatalogBoard({
 
   const budgetLabel = useMemo(() => {
     if (!active) return "";
-    const { budgetMin, budgetMax } = active.project;
-    if (budgetMin === budgetMax) return `${budgetMin.toLocaleString("ru-RU")} USDT`;
-    return `${budgetMin.toLocaleString("ru-RU")}–${budgetMax.toLocaleString("ru-RU")} USDT`;
+    const { budget } = active.project;
+    if (budget == null || !(budget > 0)) return "Не указан";
+    return `${budget.toLocaleString("ru-RU")} USDT`;
   }, [active]);
 
   return (
@@ -261,9 +267,13 @@ export function ProjectCatalogBoard({
                   </div>
                   <div className="shrink-0 text-left lg:min-w-[160px] lg:text-right">
                     <div className="font-[family-name:var(--font-syne)] text-xl font-bold text-accent">
-                      {p.budgetMin.toLocaleString("ru-RU")}–{p.budgetMax.toLocaleString("ru-RU")}
+                      {p.budget != null && p.budget > 0
+                        ? p.budget.toLocaleString("ru-RU")
+                        : "Не указан"}
                     </div>
-                    <div className="text-xs text-muted">USDT · эскроу</div>
+                    <div className="text-xs text-muted">
+                      {p.budget != null && p.budget > 0 ? "USDT · эскроу" : "цену укажет исполнитель"}
+                    </div>
                     <div className="mt-4 text-xs font-medium text-accent">
                       {myBid ? "Открыть проект →" : "Смотреть и ставить →"}
                     </div>
@@ -334,7 +344,11 @@ export function ProjectCatalogBoard({
                       <div className="font-[family-name:var(--font-syne)] text-2xl font-bold text-accent md:text-3xl">
                         {budgetLabel}
                       </div>
-                      <div className="text-xs text-muted">бюджет · эскроу</div>
+                      <div className="text-xs text-muted">
+                        {active.project.budget != null && active.project.budget > 0
+                          ? "бюджет · эскроу"
+                          : "бюджет не указан"}
+                      </div>
                     </div>
                   </div>
 
@@ -392,15 +406,20 @@ export function ProjectCatalogBoard({
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div>
                                 <label className="mb-1.5 block text-xs font-medium text-muted">
-                                  Стоимость USDT *
+                                  Ваша ставка USDT *
                                 </label>
                                 <Input
                                   name="amount"
                                   type="number"
+                                  min={1}
+                                  step="1"
                                   required
-                                  defaultValue={Math.round(
-                                    (active.project.budgetMin + active.project.budgetMax) / 2,
-                                  )}
+                                  defaultValue={
+                                    active.project.budget != null && active.project.budget > 0
+                                      ? active.project.budget
+                                      : undefined
+                                  }
+                                  placeholder="Ваша цена за работу"
                                 />
                               </div>
                               <div>
@@ -453,6 +472,66 @@ export function ProjectCatalogBoard({
                           </form>
                         </SideCard>
                       )}
+
+                      {variant === "cabinet" &&
+                        active.myBid &&
+                        active.myBid.status === "pending" && (
+                          <SideCard className="border-accent/35">
+                            <h3 className="font-[family-name:var(--font-syne)] text-base font-bold text-text">
+                              Ваша ставка · изменить
+                            </h3>
+                            <form action={updateBidAction} className="mt-4 space-y-4">
+                              <input type="hidden" name="bidId" value={active.myBid.id} />
+                              <input type="hidden" name="projectId" value={active.project.id} />
+                              <div>
+                                <label className="mb-1.5 block text-xs font-medium text-muted">
+                                  Комментарий *
+                                </label>
+                                <Textarea
+                                  name="comment"
+                                  required
+                                  defaultValue={active.myBid.comment}
+                                />
+                              </div>
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                  <label className="mb-1.5 block text-xs font-medium text-muted">
+                                    Ставка USDT *
+                                  </label>
+                                  <Input
+                                    name="amount"
+                                    type="number"
+                                    min={1}
+                                    required
+                                    defaultValue={active.myBid.amount}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1.5 block text-xs font-medium text-muted">
+                                    Срок, дней *
+                                  </label>
+                                  <Input
+                                    name="days"
+                                    type="number"
+                                    required
+                                    defaultValue={active.myBid.days}
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <Button type="submit" className="!rounded-full">
+                                  Сохранить
+                                </Button>
+                              </div>
+                            </form>
+                            <form action={withdrawBidAction} className="mt-3">
+                              <input type="hidden" name="bidId" value={active.myBid.id} />
+                              <Button type="submit" variant="ghost" className="!text-danger">
+                                Отозвать ставку
+                              </Button>
+                            </form>
+                          </SideCard>
+                        )}
                     </div>
                   )}
 
@@ -630,6 +709,15 @@ export function ProjectCatalogBoard({
                     </ButtonLink>
                   )}
 
+                  {variant === "cabinet" && (
+                    <FavoriteButton
+                      targetType="project"
+                      targetId={active.project.id}
+                      favorited={Boolean(active.favorited)}
+                      returnTo={`/freelancer/projects?project=${encodeURIComponent(active.project.id)}`}
+                    />
+                  )}
+
                   {active.client && (
                     <SideCard>
                       <div className="text-[11px] font-medium uppercase tracking-wider text-muted">
@@ -642,7 +730,12 @@ export function ProjectCatalogBoard({
                           size={48}
                         />
                         <div className="min-w-0">
-                          <div className="font-semibold text-text">{active.client.name}</div>
+                          <a
+                            href={`/clients/${active.client.id}`}
+                            className="font-semibold text-text hover:text-accent"
+                          >
+                            {active.client.name}
+                          </a>
                           <div className="text-xs text-muted">
                             {active.client.title || "Заказчик DigiForge"}
                           </div>

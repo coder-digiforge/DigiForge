@@ -107,7 +107,7 @@ export default async function AdminDealsPage({
                 </div>
 
                 {d.status === "disputed" && (
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="mt-4 flex flex-wrap items-end gap-2">
                     <form action={adminResolveAction}>
                       <input type="hidden" name="dealId" value={d.id} />
                       <input type="hidden" name="resolution" value="release" />
@@ -118,6 +118,23 @@ export default async function AdminDealsPage({
                       <input type="hidden" name="resolution" value="refund" />
                       <Button type="submit" variant="ghost">
                         Вернуть клиенту
+                      </Button>
+                    </form>
+                    <form action={adminResolveAction} className="flex flex-wrap items-end gap-2">
+                      <input type="hidden" name="dealId" value={d.id} />
+                      <input type="hidden" name="resolution" value="partial_refund" />
+                      <input
+                        name="refundAmount"
+                        type="number"
+                        min={0.01}
+                        step="0.01"
+                        max={d.amount - 0.01}
+                        placeholder="Частичный возврат"
+                        className="df-input !w-36 !py-2"
+                        required
+                      />
+                      <Button type="submit" variant="ghost">
+                        Partial
                       </Button>
                     </form>
                   </div>

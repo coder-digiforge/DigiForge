@@ -21,7 +21,7 @@ export type ProjectSort =
 
 export type DeadlineFilter = "any" | "week" | "two_weeks" | "month";
 export type BidsVisibilityFilter = "any" | "open" | "hidden";
-export type BudgetPreset = "any" | "lt1k" | "1to2k" | "gte2k";
+export type BudgetPreset = "any" | "lt1k" | "1to2k" | "gte2k" | "none";
 
 export type ProjectCatalogQuery = {
   q?: string;
@@ -72,7 +72,9 @@ export function parseProjectCatalogQuery(
 
   const budgetRaw = pick("budget") as BudgetPreset | undefined;
   const budget: BudgetPreset =
-    budgetRaw && ["any", "lt1k", "1to2k", "gte2k"].includes(budgetRaw) ? budgetRaw : "any";
+    budgetRaw && ["any", "lt1k", "1to2k", "gte2k", "none"].includes(budgetRaw)
+      ? budgetRaw
+      : "any";
 
   const budgetMin = Number(pick("budgetMin") ?? "");
   const budgetMax = Number(pick("budgetMax") ?? "");
@@ -109,6 +111,10 @@ export function matchScore(project: Project, skills: string[]) {
   return score;
 }
 
+function projectBudgetValue(project: Project): number | null {
+  return project.budget != null && project.budget > 0 ? project.budget : null;
+}
+
 export function filterAndSortProjects<
   T extends {
     project: Project;
@@ -140,24 +146,38 @@ export function filterAndSortProjects<
     if (query.deadline === "two_weeks" && project.deadlineDays > 14) return false;
     if (query.deadline === "month" && project.deadlineDays > 30) return false;
 
-    const mid = (project.budgetMin + project.budgetMax) / 2;
-    if (query.budget === "lt1k" && mid >= 1000) return false;
-    if (query.budget === "1to2k" && (mid < 1000 || mid > 2000)) return false;
-    if (query.budget === "gte2k" && mid < 2000) return false;
+    const budget = projectBudgetValue(project);
+    if (query.budget === "none") {
+      if (budget != null) return false;
+    } else if (query.budget === "lt1k") {
+      if (budget == null || budget >= 1000) return false;
+    } else if (query.budget === "1to2k") {
+      if (budget == null || budget < 1000 || budget > 2000) return false;
+    } else if (query.budget === "gte2k") {
+      if (budget == null || budget < 2000) return false;
+    }
 
-    if (query.budgetMin != null && project.budgetMax < query.budgetMin) return false;
-    if (query.budgetMax != null && project.budgetMin > query.budgetMax) return false;
+    if (query.budgetMin != null) {
+      if (budget == null || budget < query.budgetMin) return false;
+    }
+    if (query.budgetMax != null) {
+      if (budget == null || budget > query.budgetMax) return false;
+    }
 
     return true;
   });
 
   const sort = query.sort ?? "newest";
   out = [...out].sort((a, b) => {
-    if (sort === "budget_desc") {
-      return b.project.budgetMax - a.project.budgetMax || b.project.budgetMin - a.project.budgetMin;
-    }
-    if (sort === "budget_asc") {
-      return a.project.budgetMin - b.project.budgetMin || a.project.budgetMax - b.project.budgetMax;
+    if (sort === "budget_desc" || sort === "budget_asc") {
+      const ba = projectBudgetValue(a.project);
+      const bb = projectBudgetValue(b.project);
+      if (ba == null && bb == null) {
+        return b.project.createdAt.localeCompare(a.project.createdAt);
+      }
+      if (ba == null) return 1;
+      if (bb == null) return -1;
+      return sort === "budget_desc" ? bb - ba : ba - bb;
     }
     if (sort === "deadline_asc") {
       return a.project.deadlineDays - b.project.deadlineDays;

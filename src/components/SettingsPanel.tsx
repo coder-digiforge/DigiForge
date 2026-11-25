@@ -13,12 +13,15 @@ import {
   Trash2,
 } from "lucide-react";
 import {
+  beginTwoFaAction,
   changeEmailAction,
   changePasswordAction,
   clearSessionsAction,
+  confirmTwoFaAction,
   deactivateAccountAction,
+  disableTwoFaAction,
+  requestEmailVerifyAction,
   saveServiceSettingsAction,
-  setTwoFaAction,
 } from "@/app/actions/settings";
 import { writeCabinetTheme, type CabinetTheme } from "./ThemeShell";
 import { Button, PageTitle, Panel } from "./ui";
@@ -90,20 +93,28 @@ export function SettingsPanel({
   role,
   email,
   twoFaEnabled,
+  emailVerified,
   settings,
   loginLog,
   initialTab = "service",
   notice,
   error,
+  totpSecret,
+  totpUri,
+  verifyPreview,
 }: {
   role: "client" | "freelancer";
   email: string;
   twoFaEnabled: boolean;
+  emailVerified: boolean;
   settings: UserSettings;
   loginLog: LoginSession[];
   initialTab?: Tab;
   notice?: string;
   error?: string;
+  totpSecret?: string;
+  totpUri?: string;
+  verifyPreview?: string;
 }) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [theme, setTheme] = useState<DisplayTheme>(settings.theme);
@@ -492,21 +503,96 @@ export function SettingsPanel({
                 </form>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/70 pb-4">
-                <div>
-                  <div className="text-sm font-semibold text-text">
-                    Двухфакторная аутентификация
+              <div className="space-y-3 border-b border-border/70 pb-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold text-text">Подтверждение email</div>
+                    <p className="mt-1 text-xs text-muted">
+                      {emailVerified
+                        ? "Email подтверждён — вывод доступен"
+                        : "Нужно перед первым выводом"}
+                    </p>
                   </div>
-                  <p className="mt-1 text-xs text-muted">
-                    {twoFaEnabled ? "Сейчас включена" : "Сейчас выключена"}
-                  </p>
+                  {!emailVerified ? (
+                    <form action={requestEmailVerifyAction}>
+                      <Button type="submit" variant="ghost" className="!rounded-full !text-sm">
+                        Отправить ссылку
+                      </Button>
+                    </form>
+                  ) : null}
                 </div>
-                <form action={setTwoFaAction}>
-                  <input type="hidden" name="enabled" value={twoFaEnabled ? "0" : "1"} />
-                  <Button type="submit" variant="ghost" className="!rounded-full !text-sm">
-                    {twoFaEnabled ? "Отключить" : "Включить"}
-                  </Button>
-                </form>
+                {verifyPreview ? (
+                  <p className="break-all text-xs text-accent">
+                    Dev preview:{" "}
+                    <a href={verifyPreview} className="underline">
+                      {verifyPreview}
+                    </a>
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-3 border-b border-border/70 pb-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold text-text">
+                      Двухфакторная аутентификация (TOTP)
+                    </div>
+                    <p className="mt-1 text-xs text-muted">
+                      {twoFaEnabled
+                        ? "Authenticator уже подключён"
+                        : "Google Authenticator / 1Password и т.п."}
+                    </p>
+                  </div>
+                  {!twoFaEnabled && !totpSecret ? (
+                    <form action={beginTwoFaAction}>
+                      <Button type="submit" variant="ghost" className="!rounded-full !text-sm">
+                        Настроить
+                      </Button>
+                    </form>
+                  ) : null}
+                </div>
+                {totpSecret ? (
+                  <div className="rounded-xl border border-border bg-panel-soft/50 p-4 text-sm">
+                    <p className="text-muted">Секрет (добавьте в приложение):</p>
+                    <code className="mt-1 block break-all text-text">{totpSecret}</code>
+                    {totpUri ? (
+                      <a
+                        href={totpUri}
+                        className="mt-2 inline-block text-xs text-accent underline"
+                      >
+                        Открыть otpauth://
+                      </a>
+                    ) : null}
+                    <form action={confirmTwoFaAction} className="mt-3 flex flex-wrap gap-2">
+                      <input
+                        name="code"
+                        inputMode="numeric"
+                        pattern="[0-9]{6}"
+                        placeholder="Код из приложения"
+                        className="df-input !max-w-[160px] !py-2"
+                        required
+                      />
+                      <Button type="submit" className="!rounded-full !text-sm">
+                        Подтвердить
+                      </Button>
+                    </form>
+                  </div>
+                ) : null}
+                {twoFaEnabled ? (
+                  <form action={disableTwoFaAction} className="flex flex-wrap gap-2">
+                    <input
+                      name="code"
+                      inputMode="numeric"
+                      pattern="[0-9]{6}"
+                      placeholder="Код для отключения"
+                      className="df-input !max-w-[180px] !py-2"
+                      required
+                    />
+                    <Button type="submit" variant="ghost" className="!rounded-full !text-sm">
+                      Отключить 2FA
+                    </Button>
+                  </form>
+                ) : null}
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-4">

@@ -193,9 +193,15 @@ export default async function ClientProjectsPage() {
                     <div className="shrink-0 rounded-2xl border border-border bg-panel-soft/80 px-4 py-4 md:min-w-[168px] md:text-right">
                       <div className="text-[11px] uppercase tracking-wide text-muted">Бюджет</div>
                       <div className="mt-1 font-[family-name:var(--font-syne)] text-xl font-bold text-accent">
-                        {p.budgetMin}–{p.budgetMax}
+                        {p.budget != null && p.budget > 0
+                          ? p.budget.toLocaleString("ru-RU")
+                          : "Не указан"}
                       </div>
-                      <div className="mt-0.5 text-[11px] text-muted">USDT</div>
+                      <div className="mt-0.5 text-[11px] text-muted">
+                        {p.budget != null && p.budget > 0
+                          ? "USDT"
+                          : "цену предложит фрилансер"}
+                      </div>
                       {deal && (
                         <div className="mt-3 border-t border-border pt-3 text-[11px] text-muted">
                           Эскроу{" "}

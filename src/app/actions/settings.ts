@@ -1,14 +1,20 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { logout, requireUser } from "@/lib/auth";
+import { createSessionToken, SESSION_COOKIE } from "@/lib/session";
 import {
+  beginTwoFaSetup,
   changeUserEmail,
   changeUserPassword,
   clearUserSessions,
+  confirmTwoFaSetup,
   deactivateUser,
-  updateUserProfile,
+  disableTwoFa,
+  findUserById,
+  requestEmailVerification,
   updateUserSettings,
 } from "@/lib/store";
 import type { DisplayTheme, UiLanguage, VisibilityLevel } from "@/lib/types";
@@ -74,6 +80,17 @@ export async function changePasswordAction(formData: FormData) {
       String(formData.get("currentPassword") ?? ""),
       String(formData.get("nextPassword") ?? ""),
     );
+    const fresh = await findUserById(user.id);
+    if (fresh) {
+      const jar = await cookies();
+      jar.set(SESSION_COOKIE, createSessionToken(fresh.id, fresh.sessionVersion ?? 0), {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 7,
+      });
+    }
   } catch (e) {
     redirect(
       `${base}?tab=security&error=${encodeURIComponent((e as Error).message)}`,
@@ -101,19 +118,81 @@ export async function changeEmailAction(formData: FormData) {
   redirect(`${base}?tab=security&saved=1`);
 }
 
-export async function setTwoFaAction(formData: FormData) {
+export async function beginTwoFaAction() {
   const user = await requireUser(["client", "freelancer"]);
   const base = settingsBase(user.role);
-  const enabled = String(formData.get("enabled") ?? "0") === "1";
-  await updateUserProfile(user.id, { twoFaEnabled: enabled });
+  try {
+    const setup = await beginTwoFaSetup(user.id);
+    redirect(
+      `${base}?tab=security&totpSecret=${encodeURIComponent(setup.secret)}&totpUri=${encodeURIComponent(setup.otpauthUrl)}`,
+    );
+  } catch (e) {
+    redirect(`${base}?tab=security&error=${encodeURIComponent((e as Error).message)}`);
+  }
+}
+
+export async function confirmTwoFaAction(formData: FormData) {
+  const user = await requireUser(["client", "freelancer"]);
+  const base = settingsBase(user.role);
+  try {
+    await confirmTwoFaSetup(user.id, String(formData.get("code") ?? ""));
+  } catch (e) {
+    redirect(`${base}?tab=security&error=${encodeURIComponent((e as Error).message)}`);
+  }
   revalidateSettings();
   redirect(`${base}?tab=security&saved=1`);
+}
+
+export async function disableTwoFaAction(formData: FormData) {
+  const user = await requireUser(["client", "freelancer"]);
+  const base = settingsBase(user.role);
+  try {
+    await disableTwoFa(user.id, String(formData.get("code") ?? ""));
+  } catch (e) {
+    redirect(`${base}?tab=security&error=${encodeURIComponent((e as Error).message)}`);
+  }
+  revalidateSettings();
+  redirect(`${base}?tab=security&saved=1`);
+}
+
+/** @deprecated use begin/confirm/disable — kept for form compat */
+export async function setTwoFaAction(formData: FormData) {
+  const enabled = String(formData.get("enabled") ?? "0") === "1";
+  if (enabled) return beginTwoFaAction();
+  const user = await requireUser(["client", "freelancer"]);
+  const base = settingsBase(user.role);
+  redirect(`${base}?tab=security&error=${encodeURIComponent("Введите код 2FA для отключения")}`);
+}
+
+export async function requestEmailVerifyAction() {
+  const user = await requireUser(["client", "freelancer"]);
+  const base = settingsBase(user.role);
+  try {
+    const result = await requestEmailVerification(user.id);
+    const q = result.previewUrl
+      ? `&verifyPreview=${encodeURIComponent(result.previewUrl)}`
+      : "";
+    redirect(`${base}?tab=security&saved=1${q}`);
+  } catch (e) {
+    redirect(`${base}?tab=security&error=${encodeURIComponent((e as Error).message)}`);
+  }
 }
 
 export async function clearSessionsAction() {
   const user = await requireUser(["client", "freelancer"]);
   const base = settingsBase(user.role);
   await clearUserSessions(user.id);
+  const fresh = await findUserById(user.id);
+  if (fresh) {
+    const jar = await cookies();
+    jar.set(SESSION_COOKIE, createSessionToken(fresh.id, fresh.sessionVersion ?? 0), {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+  }
   revalidateSettings();
   redirect(`${base}?tab=security&saved=1`);
 }

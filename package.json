@@ -6,7 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:schema": "node scripts/apply-schema.mjs",
+    "db:alter": "node scripts/alter-schema.mjs",
+    "db:migrate": "node scripts/migrate-to-relational.mjs",
+    "db:setup": "npm run db:schema && npm run db:alter && npm run db:migrate",
+    "test": "node --experimental-strip-types --test src/**/*.test.ts",
+    "ready": "node scripts/check-ready.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.1",

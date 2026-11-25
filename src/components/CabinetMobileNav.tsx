@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
+  Bookmark,
   Briefcase,
   FolderKanban,
   Gavel,
@@ -206,6 +207,7 @@ export function FreelancerMobileNav() {
         { href: "/freelancer/projects", label: "Найти проект", icon: <Search size={16} /> },
         { href: "/freelancer/messages", label: "Переписки", icon: <MessageSquare size={16} /> },
         { href: "/freelancer/bids", label: "Ставки", icon: <Gavel size={16} /> },
+        { href: "/freelancer/favorites", label: "Избранное", icon: <Bookmark size={16} /> },
         { href: "/freelancer/finance", label: "Финансы", icon: <Wallet size={16} /> },
         { href: "/freelancer/portfolio", label: "Портфолио", icon: <FolderKanban size={16} /> },
         { href: "/freelancer/reviews", label: "Отзывы", icon: <Star size={16} /> },
@@ -257,6 +259,7 @@ export function ClientMobileNav() {
         { href: "/client/work", label: "В работе", icon: <Briefcase size={16} /> },
         { href: "/client/projects", label: "Мои проекты", icon: <FolderKanban size={16} /> },
         { href: "/client/freelancers", label: "Исполнители", icon: <Users size={16} /> },
+        { href: "/client/favorites", label: "Избранное", icon: <Bookmark size={16} /> },
         { href: "/client/finance", label: "Финансы", icon: <Wallet size={16} /> },
         { href: "/client/reviews", label: "Отзывы", icon: <Star size={16} /> },
       ],
@@ -305,6 +308,7 @@ export function AdminMobileNav() {
         { href: "/admin/projects", label: "Проекты", icon: <FolderKanban size={16} /> },
         { href: "/admin/deals", label: "Сделки", icon: <Briefcase size={16} /> },
         { href: "/admin/finance", label: "Финансы", icon: <Landmark size={16} /> },
+        { href: "/admin/audit", label: "Audit", icon: <Gavel size={16} /> },
         { href: "/admin/reviews", label: "Отзывы", icon: <MessageCircle size={16} /> },
       ],
     },

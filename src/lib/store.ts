@@ -1,8 +1,10 @@
 import { neon } from "@neondatabase/serverless";
 import {
+  AUTO_RELEASE_AFTER_DELIVER_HOURS,
   DEFAULT_FEE_PERCENT,
   DEPOSIT_TTL_HOURS,
   DIGI_PRIME_DAYS,
+  DIGI_PRIME_LAUNCH_DAYS,
   DIGI_PRIME_PRICE_USDT,
   MAX_WITHDRAW_PER_DAY_USDT,
   PENDING_FUNDING_TTL_HOURS,
@@ -27,8 +29,17 @@ import {
   normalizeUsdt,
   pushAudit,
 } from "./finance";
+import { isRelationalStore } from "./db/mode";
+import { syncFinanceTables } from "./db/sync-finance";
+import { createNowPaymentsInvoice, createNowPaymentsPayout } from "./crypto/nowpayments";
+import {
+  createEmailVerifyToken,
+  deliverVerificationLink,
+  hashEmailToken,
+} from "./email-verify";
 import { hashPassword, verifyPassword } from "./password";
-import { seedDb } from "./seed";
+import { getBootstrapDb } from "./seed";
+import { generateTotpSecret, otpauthUri, verifyTotpCode } from "./totp";
 import { DEFAULT_SETTINGS, defaultLoginLog } from "./settings";
 import type {
   Bid,
@@ -40,8 +51,10 @@ import type {
   LedgerEntry,
   Message,
   NotificationItem,
+  Favorite,
   PortfolioCase,
   Project,
+  ProjectAttachment,
   Review,
   Thread,
   User,
@@ -85,7 +98,7 @@ async function readDb(): Promise<DbShape> {
     return ensureFinanceShape(structuredClone(rows[0].payload as DbShape));
   }
 
-  const fresh = ensureFinanceShape(structuredClone(seedDb));
+  const fresh = ensureFinanceShape(getBootstrapDb());
   await writeDbForce(fresh);
   return fresh;
 }
@@ -100,6 +113,14 @@ async function writeDbForce(db: DbShape) {
     SET payload = EXCLUDED.payload,
         updated_at = now()
   `;
+  if (isRelationalStore()) {
+    try {
+      await syncFinanceTables(sql, db);
+    } catch (e) {
+      console.error("[store] relational sync failed", e);
+      throw e;
+    }
+  }
 }
 
 /** Compare-and-swap on meta.version to reduce lost-update races. */
@@ -115,7 +136,16 @@ async function writeDbCas(db: DbShape, expectedVersion: number): Promise<boolean
       AND COALESCE((payload->'meta'->>'version')::int, 0) = ${expectedVersion}
     RETURNING id
   `;
-  return rows.length > 0;
+  if (rows.length === 0) return false;
+  if (isRelationalStore()) {
+    try {
+      await syncFinanceTables(sql, db);
+    } catch (e) {
+      console.error("[store] relational sync failed", e);
+      throw e;
+    }
+  }
+  return true;
 }
 
 export async function getDb() {
@@ -168,8 +198,19 @@ export async function createUser(input: {
     rating: 0,
     reviewCount: 0,
     twoFaEnabled: false,
+    sessionVersion: 0,
+    emailVerifiedAt: null,
     createdAt: new Date().toISOString(),
   };
+
+  if (input.role === "freelancer") {
+    user.digiPrimeUntil = new Date(
+      Date.now() + DIGI_PRIME_LAUNCH_DAYS * 86400000,
+    ).toISOString();
+    user.digiPrimeTrial = true;
+    user.digiPrimeTrialUsed = true;
+    user.digiPrimeAutoRenew = false;
+  }
 
   await updateDb((db) => {
     db.users.push(user);
@@ -178,7 +219,13 @@ export async function createUser(input: {
 }
 
 export function publicUser(user: User) {
-  const { password: _password, ...rest } = user;
+  const {
+    password: _password,
+    twoFaSecret: _twoFaSecret,
+    twoFaPendingSecret: _twoFaPendingSecret,
+    emailVerifyTokenHash: _emailVerifyTokenHash,
+    ...rest
+  } = user;
   return rest;
 }
 
@@ -201,6 +248,8 @@ export async function createProject(
 ) {
   const project: Project = {
     ...input,
+    skills: input.skills ?? [],
+    attachments: input.attachments ?? [],
     id: `p-${crypto.randomUUID().slice(0, 8)}`,
     currency: "USDT",
     status: input.status ?? "open",
@@ -208,6 +257,65 @@ export async function createProject(
   };
   await updateDb((db) => db.projects.push(project));
   return project;
+}
+
+export async function updateProject(
+  projectId: string,
+  clientId: string,
+  patch: Partial<
+    Pick<
+      Project,
+      | "title"
+      | "description"
+      | "category"
+      | "budget"
+      | "deadlineDays"
+      | "bidsHidden"
+      | "skills"
+      | "attachments"
+    >
+  >,
+) {
+  let updated: Project | null = null;
+  await updateDb((db) => {
+    const project = db.projects.find((p) => p.id === projectId);
+    if (!project) throw new Error("Проект не найден");
+    if (project.clientId !== clientId) throw new Error("Нет доступа");
+    if (project.status !== "open") throw new Error("Редактировать можно только открытый проект");
+    if (patch.title !== undefined) project.title = patch.title;
+    if (patch.description !== undefined) project.description = patch.description;
+    if (patch.category !== undefined) project.category = patch.category;
+    if (patch.budget !== undefined) project.budget = patch.budget;
+    if (patch.deadlineDays !== undefined) project.deadlineDays = patch.deadlineDays;
+    if (patch.bidsHidden !== undefined) project.bidsHidden = patch.bidsHidden;
+    if (patch.skills !== undefined) project.skills = patch.skills;
+    if (patch.attachments !== undefined) project.attachments = patch.attachments;
+    updated = project;
+  });
+  return updated!;
+}
+
+export async function closeProject(projectId: string, clientId: string) {
+  await updateDb((db) => {
+    const project = db.projects.find((p) => p.id === projectId);
+    if (!project) throw new Error("Проект не найден");
+    if (project.clientId !== clientId) throw new Error("Нет доступа");
+    if (project.status !== "open") throw new Error("Закрыть можно только открытый проект");
+    project.status = "cancelled";
+    const now = new Date().toISOString();
+    for (const bid of db.bids.filter((b) => b.projectId === projectId && b.status === "pending")) {
+      bid.status = "rejected";
+      db.notifications.push({
+        id: newId("n"),
+        userId: bid.freelancerId,
+        title: "Проект закрыт",
+        body: `Заказчик закрыл «${project.title}»`,
+        read: false,
+        href: "/freelancer/projects",
+        createdAt: now,
+      });
+    }
+  });
 }
 
 export async function listFreelancers() {
@@ -228,28 +336,124 @@ export async function listBidsForFreelancer(freelancerId: string) {
 export async function createBid(
   input: Omit<Bid, "id" | "createdAt" | "status">,
 ) {
-  const bid: Bid = {
-    ...input,
-    id: `b-${crypto.randomUUID().slice(0, 8)}`,
-    status: "pending",
-    createdAt: new Date().toISOString(),
-  };
+  let created: Bid | null = null;
   await updateDb((db) => {
-    db.bids.push(bid);
     const project = db.projects.find((p) => p.id === input.projectId);
+    if (!project) throw new Error("Проект не найден");
+    if (project.status !== "open") throw new Error("Проект закрыт для ставок");
+    if (!(input.amount > 0)) throw new Error("Укажите стоимость ставки");
+    if (!(input.days > 0)) throw new Error("Укажите срок");
+
+    const duplicate = db.bids.find(
+      (b) =>
+        b.projectId === input.projectId &&
+        b.freelancerId === input.freelancerId &&
+        b.status === "pending",
+    );
+    if (duplicate) throw new Error("У вас уже есть активная ставка на этот проект");
+
+    const freelancer = db.users.find((u) => u.id === input.freelancerId);
+    let comment = input.comment.trim();
+    if (freelancer?.autoAddBidSignature && freelancer.bidSignature?.trim()) {
+      const sig = freelancer.bidSignature.trim();
+      if (!comment.includes(sig)) {
+        comment = comment ? `${comment}\n\n—\n${sig}` : sig;
+      }
+    }
+
+    const bid: Bid = {
+      ...input,
+      comment,
+      id: newId("b"),
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    db.bids.push(bid);
+    created = bid;
+    db.notifications.push({
+      id: newId("n"),
+      userId: project.clientId,
+      title: "Новая ставка",
+      body: `Новый отклик на «${project.title}»`,
+      read: false,
+      href: `/client/projects/${project.id}`,
+      createdAt: new Date().toISOString(),
+    });
+  });
+  return created!;
+}
+
+export async function updateBid(
+  bidId: string,
+  freelancerId: string,
+  patch: Partial<Pick<Bid, "amount" | "days" | "comment" | "transferCopyright" | "hideFromOthers">>,
+) {
+  let updated: Bid | null = null;
+  await updateDb((db) => {
+    const bid = db.bids.find((b) => b.id === bidId);
+    if (!bid) throw new Error("Ставка не найдена");
+    if (bid.freelancerId !== freelancerId) throw new Error("Нет доступа");
+    if (bid.status !== "pending") throw new Error("Редактировать можно только активную ставку");
+    const project = db.projects.find((p) => p.id === bid.projectId);
+    if (!project || project.status !== "open") throw new Error("Проект недоступен");
+    if (patch.amount !== undefined) {
+      if (!(patch.amount > 0)) throw new Error("Укажите стоимость ставки");
+      bid.amount = patch.amount;
+    }
+    if (patch.days !== undefined) {
+      if (!(patch.days > 0)) throw new Error("Укажите срок");
+      bid.days = patch.days;
+    }
+    if (patch.comment !== undefined) bid.comment = patch.comment;
+    if (patch.transferCopyright !== undefined) bid.transferCopyright = patch.transferCopyright;
+    if (patch.hideFromOthers !== undefined) bid.hideFromOthers = patch.hideFromOthers;
+    updated = bid;
+  });
+  return updated!;
+}
+
+export async function withdrawBid(bidId: string, freelancerId: string) {
+  await updateDb((db) => {
+    const bid = db.bids.find((b) => b.id === bidId);
+    if (!bid) throw new Error("Ставка не найдена");
+    if (bid.freelancerId !== freelancerId) throw new Error("Нет доступа");
+    if (bid.status !== "pending") throw new Error("Отозвать можно только активную ставку");
+    bid.status = "rejected";
+    const project = db.projects.find((p) => p.id === bid.projectId);
     if (project) {
       db.notifications.push({
-        id: `n-${crypto.randomUUID().slice(0, 8)}`,
+        id: newId("n"),
         userId: project.clientId,
-        title: "Новая ставка",
-        body: `Новый отклик на «${project.title}»`,
+        title: "Ставка отозвана",
+        body: `Исполнитель отозвал ставку по «${project.title}»`,
         read: false,
         href: `/client/projects/${project.id}`,
         createdAt: new Date().toISOString(),
       });
     }
   });
-  return bid;
+}
+
+export async function rejectBid(projectId: string, bidId: string, clientId: string) {
+  await updateDb((db) => {
+    const project = db.projects.find((p) => p.id === projectId);
+    const bid = db.bids.find((b) => b.id === bidId);
+    if (!project || !bid) throw new Error("Не найдено");
+    if (project.clientId !== clientId) throw new Error("Нет доступа");
+    if (project.status !== "open") throw new Error("Проект уже закрыт");
+    if (bid.projectId !== projectId) throw new Error("Ставка не от этого проекта");
+    if (bid.status !== "pending") throw new Error("Ставка недоступна");
+    bid.status = "rejected";
+    db.notifications.push({
+      id: newId("n"),
+      userId: bid.freelancerId,
+      title: "Ставка отклонена",
+      body: `Заказчик отклонил ставку по «${project.title}»`,
+      read: false,
+      href: "/freelancer/bids",
+      createdAt: new Date().toISOString(),
+    });
+  });
 }
 
 export async function getBalances(userId: string) {
@@ -262,6 +466,22 @@ export async function listLedger(userId: string) {
   return db.ledger
     .filter((e) => e.userId === userId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function listPendingDeposits(userId: string) {
+  const db = await readDb();
+  return db.deposits
+    .filter(
+      (d) =>
+        d.userId === userId &&
+        (d.status === "awaiting" || d.status === "confirming"),
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function listAuditLog(limit = 100) {
+  const db = await readDb();
+  return [...db.auditLog].sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
 }
 
 export async function createDeposit(input: {
@@ -277,14 +497,31 @@ export async function createDeposit(input: {
   );
   const amount = assertDepositAmount(input.amount);
   const now = new Date();
+  const depositId = newId("dep");
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(
+    /\/$/,
+    "",
+  );
+  const invoice = await createNowPaymentsInvoice({
+    depositId,
+    amountUsdt: amount,
+    network: input.network,
+    ipnCallbackUrl: `${appUrl}/api/crypto/webhook`,
+  });
+
   const deposit: DepositRequest = {
-    id: newId("dep"),
+    id: depositId,
     userId: input.userId,
     amount,
     asset: input.asset,
     network: input.network,
-    address: depositAddress(input.network),
+    address: invoice.payAddress || depositAddress(input.network),
     status: "awaiting",
+    providerRef: invoice.paymentId,
+    invoiceUrl: invoice.invoiceUrl,
+    payAmount: invoice.payAmount,
+    payCurrency: invoice.payCurrency,
+    providerSimulated: invoice.simulated,
     expiresAt: new Date(now.getTime() + DEPOSIT_TTL_HOURS * 3600_000).toISOString(),
     createdAt: now.toISOString(),
   };
@@ -298,7 +535,12 @@ export async function createDeposit(input: {
       action: "deposit.create",
       entityType: "deposit",
       entityId: deposit.id,
-      meta: { amount, network: input.network },
+      meta: {
+        amount,
+        network: input.network,
+        providerRef: invoice.paymentId,
+        simulated: invoice.simulated,
+      },
     });
   });
   return deposit;
@@ -413,6 +655,7 @@ export async function requestWithdraw(input: {
   asset: CryptoAsset;
   network: CryptoNetwork;
   address: string;
+  totpCode?: string;
 }) {
   assertRateLimit(
     `withdraw:${input.userId}`,
@@ -427,10 +670,22 @@ export async function requestWithdraw(input: {
     const user = d.users.find((u) => u.id === input.userId);
     if (!user || user.deactivatedAt) throw new Error("Аккаунт недоступен");
 
-    if (amount >= WITHDRAW_REQUIRES_2FA_USDT && !user.twoFaEnabled) {
-      throw new Error(
-        `Для вывода от ${WITHDRAW_REQUIRES_2FA_USDT} USDT включите 2FA в настройках`,
-      );
+    if (!user.emailVerifiedAt) {
+      throw new Error("Подтвердите email перед первым выводом (Настройки → Безопасность)");
+    }
+
+    if (amount >= WITHDRAW_REQUIRES_2FA_USDT) {
+      if (!user.twoFaEnabled || !user.twoFaSecret) {
+        throw new Error(
+          `Для вывода от ${WITHDRAW_REQUIRES_2FA_USDT} USDT включите TOTP 2FA в настройках`,
+        );
+      }
+      if (!input.totpCode) {
+        throw new Error("Введите код 2FA для вывода");
+      }
+      if (!verifyTotpCode(user.twoFaSecret, input.totpCode)) {
+        throw new Error("Неверный код 2FA");
+      }
     }
 
     if (user.sensitiveChangedAt) {
@@ -564,7 +819,12 @@ export async function fundDeal(dealId: string, clientId: string) {
   return deal!;
 }
 
-export async function acceptBid(projectId: string, bidId: string, clientId: string) {
+export async function acceptBid(
+  projectId: string,
+  bidId: string,
+  clientId: string,
+  amountOverride?: number,
+) {
   let result: Deal | null = null;
   await updateDb((d) => {
     const project = d.projects.find((p) => p.id === projectId);
@@ -575,7 +835,11 @@ export async function acceptBid(projectId: string, bidId: string, clientId: stri
     if (bid.projectId !== projectId) throw new Error("Ставка не от этого проекта");
     if (bid.status !== "pending") throw new Error("Ставка недоступна");
 
-    const amount = normalizeUsdt(bid.amount);
+    const agreed =
+      amountOverride != null && amountOverride > 0 ? amountOverride : bid.amount;
+    const amount = normalizeUsdt(agreed);
+    if (!(amount > 0)) throw new Error("Укажите стоимость сделки");
+    bid.amount = amount;
     const feePercent = DEFAULT_FEE_PERCENT;
     const feeAmount = normalizeUsdt((amount * feePercent) / 100);
     const now = new Date();
@@ -669,18 +933,22 @@ export async function deliverDeal(dealId: string, freelancerId: string) {
       throw new Error("Сдать работу можно только из статуса «в работе»");
     }
     assertDealTransition(deal.status, "delivered");
+    const now = new Date();
     deal.status = "delivered";
-    deal.deliveredAt = new Date().toISOString();
+    deal.deliveredAt = now.toISOString();
+    deal.autoReleaseAt = new Date(
+      now.getTime() + AUTO_RELEASE_AFTER_DELIVER_HOURS * 3600_000,
+    ).toISOString();
     const project = db.projects.find((p) => p.id === deal.projectId);
     if (project) project.status = "delivered";
     db.notifications.push({
       id: newId("n"),
       userId: deal.clientId,
       title: "Работа сдана",
-      body: "Проверьте результат и примите работу",
+      body: `Проверьте результат. Авто-релиз через ${AUTO_RELEASE_AFTER_DELIVER_HOURS} ч., если нет ответа.`,
       read: false,
       href: "/client/work",
-      createdAt: new Date().toISOString(),
+      createdAt: now.toISOString(),
     });
     pushAudit(db, {
       actorUserId: freelancerId,
@@ -806,8 +1074,9 @@ export async function disputeDeal(dealId: string, userId: string) {
 
 export async function adminResolveDeal(
   dealId: string,
-  resolution: "release" | "refund",
+  resolution: "release" | "refund" | "partial_refund",
   adminUserId?: string,
+  opts?: { refundAmount?: number },
 ) {
   if (resolution === "release") {
     await updateDb((db) => {
@@ -817,6 +1086,7 @@ export async function adminResolveDeal(
     });
     return;
   }
+
   await updateDb((db) => {
     const deal = db.deals.find((d) => d.id === dealId);
     if (!deal) throw new Error("Не найдено");
@@ -824,15 +1094,82 @@ export async function adminResolveDeal(
     if (deal.status !== "disputed") throw new Error("Возврат только из диспута");
 
     const duplicate = db.ledger.some(
-      (e) => e.dealId === deal.id && e.kind === "escrow_refund",
+      (e) =>
+        e.dealId === deal.id &&
+        (e.kind === "escrow_refund" || e.kind === "escrow_release" || e.kind === "fee"),
     );
-    if (duplicate) throw new Error("Возврат уже выполнен");
+    if (duplicate) throw new Error("Сделка уже рассчитана");
+
+    const now = new Date().toISOString();
+    let refundAmount = deal.amount;
+    if (resolution === "partial_refund") {
+      refundAmount = normalizeUsdt(Number(opts?.refundAmount ?? 0));
+      if (refundAmount <= 0 || refundAmount >= deal.amount) {
+        throw new Error("Частичный возврат: укажите сумму больше 0 и меньше суммы сделки");
+      }
+      const toFreelancer = normalizeUsdt(deal.amount - refundAmount);
+      const fee = normalizeUsdt((toFreelancer * deal.feePercent) / 100);
+      const payout = normalizeUsdt(toFreelancer - fee);
+
+      assertDealTransition(deal.status, "released");
+      deal.status = "released";
+      deal.releasedAt = now;
+      deal.autoReleaseAt = undefined;
+      const project = db.projects.find((p) => p.id === deal.projectId);
+      if (project) project.status = "completed";
+
+      db.ledger.push({
+        id: newId("l"),
+        userId: deal.clientId,
+        kind: "escrow_refund",
+        amount: refundAmount,
+        asset: "USDT",
+        note: `Частичный возврат заказчику ${refundAmount} USDT`,
+        dealId: deal.id,
+        createdAt: now,
+        settledAt: now,
+      });
+      if (payout > 0) {
+        db.ledger.push({
+          id: newId("l"),
+          userId: deal.freelancerId,
+          kind: "escrow_release",
+          amount: payout,
+          asset: "USDT",
+          note: `Частичная выплата (−${deal.feePercent}% с доли)`,
+          dealId: deal.id,
+          createdAt: now,
+          settledAt: now,
+        });
+      }
+      if (fee > 0) {
+        db.ledger.push({
+          id: newId("l"),
+          userId: PLATFORM_FEE_USER_ID,
+          kind: "fee",
+          amount: fee,
+          asset: "USDT",
+          note: `Комиссия с частичной выплаты`,
+          dealId: deal.id,
+          createdAt: now,
+          settledAt: now,
+        });
+      }
+      pushAudit(db, {
+        actorUserId: adminUserId,
+        action: "escrow.refund",
+        entityType: "deal",
+        entityId: deal.id,
+        meta: { amount: refundAmount, partial: true, payout, fee },
+      });
+      return;
+    }
 
     assertDealTransition(deal.status, "refunded");
     deal.status = "refunded";
+    deal.autoReleaseAt = undefined;
     const project = db.projects.find((p) => p.id === deal.projectId);
     if (project) project.status = "cancelled";
-    const now = new Date().toISOString();
     db.ledger.push({
       id: newId("l"),
       userId: deal.clientId,
@@ -852,6 +1189,59 @@ export async function adminResolveDeal(
       meta: { amount: deal.amount },
     });
   });
+}
+
+/** Cron: expire deposits, cancel unfunded deals, auto-release delivered. */
+export async function runFinanceMaintenanceJobs() {
+  const summary = { expiredDeposits: 0, cancelledDeals: 0, autoReleased: 0 };
+  await updateDb((db) => {
+    const now = Date.now();
+    for (const dep of db.deposits) {
+      if (
+        (dep.status === "awaiting" || dep.status === "confirming") &&
+        new Date(dep.expiresAt).getTime() < now
+      ) {
+        dep.status = "expired";
+        summary.expiredDeposits += 1;
+      }
+    }
+
+    for (const deal of db.deals) {
+      if (
+        deal.status === "pending_funding" &&
+        deal.fundingDeadlineAt &&
+        new Date(deal.fundingDeadlineAt).getTime() < now
+      ) {
+        deal.status = "refunded";
+        const project = db.projects.find((p) => p.id === deal.projectId);
+        if (project && project.status !== "completed") project.status = "cancelled";
+        summary.cancelledDeals += 1;
+        pushAudit(db, {
+          action: "escrow.refund",
+          entityType: "deal",
+          entityId: deal.id,
+          meta: { reason: "funding_ttl", hours: PENDING_FUNDING_TTL_HOURS },
+        });
+      }
+    }
+
+    for (const deal of [...db.deals]) {
+      if (
+        deal.status === "delivered" &&
+        deal.autoReleaseAt &&
+        new Date(deal.autoReleaseAt).getTime() < now
+      ) {
+        try {
+          releaseDealInDb(db, deal.id, PLATFORM_FEE_USER_ID, true);
+          deal.autoReleaseAt = undefined;
+          summary.autoReleased += 1;
+        } catch {
+          // skip if already released / invariant fail
+        }
+      }
+    }
+  });
+  return summary;
 }
 
 export async function buyDigiPrime(
@@ -1014,6 +1404,41 @@ export async function addPortfolioCase(
   return item;
 }
 
+export async function updatePortfolioCase(
+  caseId: string,
+  freelancerId: string,
+  patch: Partial<
+    Pick<
+      PortfolioCase,
+      "title" | "summary" | "tags" | "priceUsdt" | "projectUrl" | "coverUrl"
+    >
+  >,
+) {
+  let updated: PortfolioCase | null = null;
+  await updateDb((db) => {
+    const item = db.portfolio.find(
+      (c) => c.id === caseId && c.freelancerId === freelancerId,
+    );
+    if (!item) return;
+    Object.assign(item, patch);
+    updated = item;
+  });
+  return updated;
+}
+
+export async function deletePortfolioCase(caseId: string, freelancerId: string) {
+  let removed = false;
+  await updateDb((db) => {
+    const idx = db.portfolio.findIndex(
+      (c) => c.id === caseId && c.freelancerId === freelancerId,
+    );
+    if (idx === -1) return;
+    db.portfolio.splice(idx, 1);
+    removed = true;
+  });
+  return removed;
+}
+
 export async function updateUserProfile(
   userId: string,
   patch: Partial<
@@ -1037,6 +1462,12 @@ export async function updateUserProfile(
       | "digiPrimeTrial"
       | "digiPrimeTrialUsed"
       | "digiPrimeAutoRenew"
+      | "workStatus"
+      | "legalForm"
+      | "motto"
+      | "bidSignature"
+      | "autoAddBidSignature"
+      | "profileI18n"
     >
   >,
 ) {
@@ -1086,6 +1517,7 @@ export async function changeUserPassword(
     if (nextPassword.length < 8) throw new Error("Новый пароль — минимум 8 символов");
     user.password = hashPassword(nextPassword);
     user.sensitiveChangedAt = new Date().toISOString();
+    user.sessionVersion = (user.sessionVersion ?? 0) + 1;
     pushAudit(db, {
       actorUserId: userId,
       action: "security.sensitive_change",
@@ -1108,6 +1540,9 @@ export async function changeUserEmail(userId: string, email: string, password: s
     }
     user.email = next;
     user.sensitiveChangedAt = new Date().toISOString();
+    user.emailVerifiedAt = null;
+    user.emailVerifyTokenHash = null;
+    user.emailVerifyExpiresAt = null;
     pushAudit(db, {
       actorUserId: userId,
       action: "security.sensitive_change",
@@ -1122,11 +1557,116 @@ export async function clearUserSessions(userId: string) {
   await updateDb((db) => {
     const user = db.users.find((u) => u.id === userId);
     if (!user) throw new Error("Не найден");
+    user.sessionVersion = (user.sessionVersion ?? 0) + 1;
     const log = user.loginLog?.length ? user.loginLog : defaultLoginLog();
     user.loginLog = log
       .filter((s) => s.current)
       .map((s) => ({ ...s, createdAt: new Date().toISOString() }));
+    pushAudit(db, {
+      actorUserId: userId,
+      action: "auth.sessions_cleared",
+      entityType: "user",
+      entityId: userId,
+      meta: { sessionVersion: user.sessionVersion },
+    });
   });
+}
+
+export async function beginTwoFaSetup(userId: string) {
+  let uri = "";
+  let secret = "";
+  await updateDb((db) => {
+    const user = db.users.find((u) => u.id === userId);
+    if (!user) throw new Error("Не найден");
+    secret = generateTotpSecret();
+    user.twoFaPendingSecret = secret;
+    uri = otpauthUri({ secret, email: user.email });
+  });
+  return { secret, otpauthUrl: uri };
+}
+
+export async function confirmTwoFaSetup(userId: string, code: string) {
+  await updateDb((db) => {
+    const user = db.users.find((u) => u.id === userId);
+    if (!user) throw new Error("Не найден");
+    const pending = user.twoFaPendingSecret;
+    if (!pending) throw new Error("Сначала начните настройку 2FA");
+    if (!verifyTotpCode(pending, code)) throw new Error("Неверный код 2FA");
+    user.twoFaSecret = pending;
+    user.twoFaPendingSecret = null;
+    user.twoFaEnabled = true;
+    pushAudit(db, {
+      actorUserId: userId,
+      action: "auth.2fa_enabled",
+      entityType: "user",
+      entityId: userId,
+    });
+  });
+}
+
+export async function disableTwoFa(userId: string, code: string) {
+  await updateDb((db) => {
+    const user = db.users.find((u) => u.id === userId);
+    if (!user) throw new Error("Не найден");
+    if (!user.twoFaSecret || !verifyTotpCode(user.twoFaSecret, code)) {
+      throw new Error("Неверный код 2FA");
+    }
+    user.twoFaEnabled = false;
+    user.twoFaSecret = null;
+    user.twoFaPendingSecret = null;
+    pushAudit(db, {
+      actorUserId: userId,
+      action: "auth.2fa_disabled",
+      entityType: "user",
+      entityId: userId,
+    });
+  });
+}
+
+export async function requestEmailVerification(userId: string) {
+  const { raw, hash } = createEmailVerifyToken();
+  let email = "";
+  await updateDb((db) => {
+    const user = db.users.find((u) => u.id === userId);
+    if (!user) throw new Error("Не найден");
+    if (user.emailVerifiedAt) throw new Error("Email уже подтверждён");
+    email = user.email;
+    user.emailVerifyTokenHash = hash;
+    user.emailVerifyExpiresAt = new Date(Date.now() + 24 * 3600_000).toISOString();
+  });
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const url = `${base.replace(/\/$/, "")}/api/verify-email?token=${raw}`;
+  const delivery = await deliverVerificationLink(email, url);
+  return {
+    sent: true,
+    previewUrl: delivery.channel === "console" ? url : undefined,
+  };
+}
+
+export async function confirmEmailVerification(rawToken: string) {
+  const hash = hashEmailToken(rawToken);
+  let ok = false;
+  await updateDb((db) => {
+    const user = db.users.find((u) => u.emailVerifyTokenHash === hash);
+    if (!user) throw new Error("Ссылка недействительна");
+    if (
+      user.emailVerifyExpiresAt &&
+      new Date(user.emailVerifyExpiresAt).getTime() < Date.now()
+    ) {
+      throw new Error("Ссылка истекла");
+    }
+    user.emailVerifiedAt = new Date().toISOString();
+    user.emailVerifyTokenHash = null;
+    user.emailVerifyExpiresAt = null;
+    ok = true;
+    pushAudit(db, {
+      actorUserId: user.id,
+      action: "auth.email_verified",
+      entityType: "user",
+      entityId: user.id,
+    });
+  });
+  return ok;
 }
 
 export async function deactivateUser(userId: string) {
@@ -1175,35 +1715,26 @@ export async function adminProcessWithdrawal(
   adminUserId?: string,
   opts?: { txHash?: string; rejectReason?: string },
 ) {
-  await updateDb((db) => {
-    const wd = db.withdrawals.find((w) => w.id === withdrawalId);
-    if (!wd) throw new Error("Заявка не найдена");
-    if (wd.status !== "pending" && wd.status !== "processing") {
-      throw new Error("Заявка уже обработана");
-    }
-
-    const now = new Date().toISOString();
-    wd.reviewedBy = adminUserId;
-    wd.reviewedAt = now;
-
-    if (decision === "approve") {
-      assertUniqueTxHash(
-        db.ledger.filter((e) => e.kind === "withdraw"),
-        opts?.txHash,
-      );
-      wd.status = "completed";
-      wd.txHash =
-        opts?.txHash ?? `payout-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
-      // Hold remains (funds left the platform). Audit row for payout tx.
+  if (decision === "reject") {
+    await updateDb((db) => {
+      const wd = db.withdrawals.find((w) => w.id === withdrawalId);
+      if (!wd) throw new Error("Заявка не найдена");
+      if (wd.status !== "pending" && wd.status !== "processing") {
+        throw new Error("Заявка уже обработана");
+      }
+      const now = new Date().toISOString();
+      wd.status = "rejected";
+      wd.reviewedBy = adminUserId;
+      wd.reviewedAt = now;
+      wd.rejectReason = opts?.rejectReason ?? "Отклонено администратором";
       db.ledger.push({
         id: newId("l"),
         userId: wd.userId,
-        kind: "withdraw",
-        amount: 0,
+        kind: "withdraw_release",
+        amount: wd.amount,
         asset: wd.asset,
         network: wd.network,
-        note: `Вывод подтверждён · ${wd.txHash}`,
-        txHash: wd.txHash,
+        note: `Отмена вывода · возврат ${wd.amount} ${wd.asset}`,
         withdrawalId: wd.id,
         createdAt: now,
         settledAt: now,
@@ -1211,31 +1742,101 @@ export async function adminProcessWithdrawal(
       db.notifications.push({
         id: newId("n"),
         userId: wd.userId,
-        title: "Вывод выполнен",
-        body: `${wd.amount} ${wd.asset} отправлены на кошелёк`,
+        title: "Вывод отклонён",
+        body: `Заявка на ${wd.amount} ${wd.asset} отклонена, средства возвращены`,
         read: false,
         createdAt: now,
       });
       pushAudit(db, {
         actorUserId: adminUserId,
-        action: "withdraw.approve",
+        action: "withdraw.reject",
         entityType: "withdrawal",
         entityId: wd.id,
-        meta: { amount: wd.amount, txHash: wd.txHash },
+        meta: { amount: wd.amount, reason: wd.rejectReason },
       });
-      return;
-    }
+      assertNonNegativeAvailable(db, wd.userId);
+    });
+    return;
+  }
 
-    wd.status = "rejected";
-    wd.rejectReason = opts?.rejectReason ?? "Отклонено администратором";
+  // approve → processing → provider payout → completed (or release on failure)
+  let snapshot: WithdrawalRequest | null = null;
+  await updateDb((db) => {
+    const wd = db.withdrawals.find((w) => w.id === withdrawalId);
+    if (!wd) throw new Error("Заявка не найдена");
+    if (wd.status !== "pending" && wd.status !== "processing") {
+      throw new Error("Заявка уже обработана");
+    }
+    wd.status = "processing";
+    wd.reviewedBy = adminUserId;
+    wd.reviewedAt = new Date().toISOString();
+    snapshot = { ...wd };
+  });
+  const wdSnap = snapshot as WithdrawalRequest | null;
+  if (!wdSnap) throw new Error("Заявка не найдена");
+
+  let payout: Awaited<ReturnType<typeof createNowPaymentsPayout>>;
+  try {
+    payout = await createNowPaymentsPayout({
+      withdrawalId,
+      amountUsdt: wdSnap.amount,
+      address: wdSnap.address,
+      network: wdSnap.network,
+    });
+  } catch (e) {
+    await updateDb((db) => {
+      const wd = db.withdrawals.find((w) => w.id === withdrawalId);
+      if (!wd || wd.status === "completed" || wd.status === "rejected") return;
+      const now = new Date().toISOString();
+      wd.status = "rejected";
+      wd.rejectReason = e instanceof Error ? e.message : "Payout failed";
+      db.ledger.push({
+        id: newId("l"),
+        userId: wd.userId,
+        kind: "withdraw_release",
+        amount: wd.amount,
+        asset: wd.asset,
+        network: wd.network,
+        note: `Ошибка payout · возврат ${wd.amount} ${wd.asset}`,
+        withdrawalId: wd.id,
+        createdAt: now,
+        settledAt: now,
+      });
+      pushAudit(db, {
+        actorUserId: adminUserId,
+        action: "withdraw.reject",
+        entityType: "withdrawal",
+        entityId: wd.id,
+        meta: { amount: wd.amount, reason: wd.rejectReason },
+      });
+      assertNonNegativeAvailable(db, wd.userId);
+    });
+    throw e;
+  }
+
+  const txHash = opts?.txHash ?? payout.txHash;
+  await updateDb((db) => {
+    const wd = db.withdrawals.find((w) => w.id === withdrawalId);
+    if (!wd) throw new Error("Заявка не найдена");
+    if (wd.status === "completed") return;
+    assertUniqueTxHash(
+      db.ledger.filter((e) => e.kind === "withdraw"),
+      txHash,
+    );
+    const now = new Date().toISOString();
+    wd.status = "completed";
+    wd.txHash = txHash ?? `payout-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    wd.providerRef = payout.id;
+    wd.providerSimulated = payout.simulated;
     db.ledger.push({
       id: newId("l"),
       userId: wd.userId,
-      kind: "withdraw_release",
-      amount: wd.amount,
+      kind: "withdraw",
+      amount: 0,
       asset: wd.asset,
       network: wd.network,
-      note: `Отмена вывода · возврат ${wd.amount} ${wd.asset}`,
+      note: `Вывод подтверждён · ${wd.txHash}${payout.simulated ? " (sim)" : ""}`,
+      txHash: wd.txHash,
       withdrawalId: wd.id,
       createdAt: now,
       settledAt: now,
@@ -1243,19 +1844,22 @@ export async function adminProcessWithdrawal(
     db.notifications.push({
       id: newId("n"),
       userId: wd.userId,
-      title: "Вывод отклонён",
-      body: `Заявка на ${wd.amount} ${wd.asset} отклонена, средства возвращены`,
+      title: "Вывод выполнен",
+      body: `${wd.amount} ${wd.asset} отправлены на кошелёк`,
       read: false,
       createdAt: now,
     });
     pushAudit(db, {
       actorUserId: adminUserId,
-      action: "withdraw.reject",
+      action: "withdraw.approve",
       entityType: "withdrawal",
       entityId: wd.id,
-      meta: { amount: wd.amount, reason: wd.rejectReason },
+      meta: {
+        amount: wd.amount,
+        txHash: wd.txHash ?? null,
+        simulated: payout.simulated,
+      },
     });
-    assertNonNegativeAvailable(db, wd.userId);
   });
 }
 
@@ -1292,16 +1896,155 @@ export async function listAllForAdmin() {
 }
 
 export async function addReview(input: Omit<Review, "id" | "createdAt">) {
-  const review: Review = {
-    ...input,
-    id: `r-${crypto.randomUUID().slice(0, 8)}`,
-    createdAt: new Date().toISOString(),
-  };
+  let created: Review | null = null;
   await updateDb((db) => {
+    const deal = db.deals.find((d) => d.id === input.dealId);
+    if (!deal) throw new Error("Сделка не найдена");
+    if (deal.status !== "released") throw new Error("Отзыв доступен после выплаты");
+    if (input.fromUserId !== deal.clientId && input.fromUserId !== deal.freelancerId) {
+      throw new Error("Нет доступа");
+    }
+    const expectedTo =
+      input.fromUserId === deal.clientId ? deal.freelancerId : deal.clientId;
+    if (input.toUserId !== expectedTo) throw new Error("Неверный получатель отзыва");
+    if (db.reviews.some((r) => r.dealId === input.dealId && r.fromUserId === input.fromUserId)) {
+      throw new Error("Вы уже оставили отзыв по этой сделке");
+    }
+    const rating = Math.min(5, Math.max(1, Math.round(input.rating)));
+    const review: Review = {
+      ...input,
+      rating,
+      text: input.text.trim(),
+      id: newId("r"),
+      createdAt: new Date().toISOString(),
+    };
     db.reviews.push(review);
     applyReviewStats(db, input.toUserId);
+    db.notifications.push({
+      id: newId("n"),
+      userId: input.toUserId,
+      title: "Новый отзыв",
+      body: `Вам поставили ${rating}/5`,
+      read: false,
+      href: deal.clientId === input.toUserId ? "/client/reviews" : "/freelancer/reviews",
+      createdAt: new Date().toISOString(),
+    });
+    created = review;
   });
-  return review;
+  return created!;
+}
+
+export async function listFavorites(userId: string) {
+  const db = await readDb();
+  return db.favorites
+    .filter((f) => f.userId === userId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function isFavorite(
+  userId: string,
+  targetType: Favorite["targetType"],
+  targetId: string,
+) {
+  const db = await readDb();
+  return db.favorites.some(
+    (f) => f.userId === userId && f.targetType === targetType && f.targetId === targetId,
+  );
+}
+
+export async function toggleFavorite(
+  userId: string,
+  targetType: Favorite["targetType"],
+  targetId: string,
+) {
+  let favorited = false;
+  await updateDb((db) => {
+    const idx = db.favorites.findIndex(
+      (f) => f.userId === userId && f.targetType === targetType && f.targetId === targetId,
+    );
+    if (idx >= 0) {
+      db.favorites.splice(idx, 1);
+      favorited = false;
+      return;
+    }
+    if (targetType === "project") {
+      const project = db.projects.find((p) => p.id === targetId);
+      if (!project) throw new Error("Проект не найден");
+    } else {
+      const user = db.users.find((u) => u.id === targetId && u.role === "freelancer");
+      if (!user) throw new Error("Фрилансер не найден");
+    }
+    db.favorites.push({
+      id: newId("fav"),
+      userId,
+      targetType,
+      targetId,
+      createdAt: new Date().toISOString(),
+    });
+    favorited = true;
+  });
+  return favorited;
+}
+
+export async function inviteFreelancerToProject(input: {
+  clientId: string;
+  freelancerId: string;
+  projectId: string;
+  message?: string;
+}) {
+  await updateDb((db) => {
+    const project = db.projects.find((p) => p.id === input.projectId);
+    if (!project) throw new Error("Проект не найден");
+    if (project.clientId !== input.clientId) throw new Error("Нет доступа");
+    if (project.status !== "open") throw new Error("Проект закрыт");
+    const freelancer = db.users.find(
+      (u) => u.id === input.freelancerId && u.role === "freelancer",
+    );
+    if (!freelancer) throw new Error("Фрилансер не найден");
+
+    const note = (input.message ?? "").trim();
+    db.notifications.push({
+      id: newId("n"),
+      userId: freelancer.id,
+      title: "Приглашение на проект",
+      body: note
+        ? `«${project.title}»: ${note}`
+        : `Заказчик пригласил вас на «${project.title}»`,
+      read: false,
+      href: `/freelancer/projects?project=${encodeURIComponent(project.id)}`,
+      createdAt: new Date().toISOString(),
+    });
+
+    let thread = db.threads.find(
+      (t) =>
+        t.projectId === project.id &&
+        t.participantIds.includes(input.clientId) &&
+        t.participantIds.includes(freelancer.id) &&
+        !t.dealId,
+    );
+    const now = new Date().toISOString();
+    if (!thread) {
+      thread = {
+        id: newId("t"),
+        projectId: project.id,
+        participantIds: [input.clientId, freelancer.id],
+        title: project.title,
+        updatedAt: now,
+      };
+      db.threads.push(thread);
+    } else {
+      thread.updatedAt = now;
+    }
+    db.messages.push({
+      id: newId("m"),
+      threadId: thread.id,
+      senderId: input.clientId,
+      body:
+        note ||
+        `Здравствуйте! Приглашаю вас откликнуться на проект «${project.title}».`,
+      createdAt: now,
+    });
+  });
 }
 
 export type { NotificationItem };

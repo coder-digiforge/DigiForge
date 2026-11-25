@@ -11,6 +11,7 @@ import {
   Moon,
   Settings,
   Sparkles,
+  Sun,
 } from "lucide-react";
 import { logoutAction } from "@/app/actions/auth";
 import type { SessionUser } from "@/lib/auth";
@@ -101,7 +102,7 @@ export function ProfileMenu({
       </button>
 
       <div
-        className={`absolute right-0 top-full z-50 w-[300px] pt-3 transition-all duration-200 ${
+        className={`fixed inset-x-3 top-[3.5rem] z-50 pt-1 transition-all duration-200 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:w-[300px] sm:pt-3 ${
           open
             ? "visible translate-y-0 opacity-100"
             : "invisible -translate-y-1 opacity-0 pointer-events-none"
@@ -109,7 +110,7 @@ export function ProfileMenu({
       >
         <div
           role="menu"
-          className="rounded-2xl border border-border bg-[var(--menu-bg)] p-4 shadow-[0_18px_48px_rgba(0,0,0,0.45)]"
+          className="max-h-[min(80dvh,640px)] overflow-y-auto rounded-2xl border border-border bg-[var(--menu-bg)] p-4 shadow-[0_18px_48px_rgba(0,0,0,0.45)]"
         >
           <div className="mb-3">
             <div className="font-[family-name:var(--font-syne)] text-lg font-bold text-text">
@@ -162,8 +163,12 @@ export function ProfileMenu({
               onClick={toggleTheme}
             >
               <span className="flex items-center gap-2.5">
-                <Moon size={16} className="shrink-0 text-accent" />
-                Темная тема
+                {darkTheme ? (
+                  <Moon size={16} className="shrink-0 text-accent" />
+                ) : (
+                  <Sun size={16} className="shrink-0 text-accent" />
+                )}
+                {darkTheme ? "Тёмная тема" : "Светлая тема"}
               </span>
               <span
                 className={`relative h-[22px] w-10 rounded-full transition-colors ${

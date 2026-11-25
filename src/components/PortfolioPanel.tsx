@@ -1,54 +1,78 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FolderKanban, Plus, Sparkles, X } from "lucide-react";
 import {
-  FolderKanban,
-  ImagePlus,
-  Link2,
-  Plus,
-  Sparkles,
-  Wallet,
-  X,
-} from "lucide-react";
-import { addPortfolioAction } from "@/app/actions/marketplace";
+  addPortfolioAction,
+  deletePortfolioAction,
+  updatePortfolioAction,
+} from "@/app/actions/marketplace";
 import { PortfolioCoverField } from "@/components/PortfolioCoverField";
 import { PortfolioGallery, type PortfolioCardItem } from "@/components/PortfolioGallery";
 import { PortfolioSummaryField } from "@/components/PortfolioSummaryField";
-import { Button, ButtonLink, EmptyState, Input, Panel } from "@/components/ui";
+import { Button, EmptyState, Input, Panel } from "@/components/ui";
+import type { PortfolioAuthor } from "@/lib/portfolio-author";
+import { PROJECT_CATEGORIES } from "@/lib/project-catalog";
 
-function casesWord(n: number) {
-  if (n === 1) return "работа";
-  if (n >= 2 && n <= 4) return "работы";
-  return "работ";
-}
+const LANGS = [
+  { id: "ru", label: "Русский" },
+  { id: "en", label: "English" },
+  { id: "uk", label: "Українська" },
+  { id: "pl", label: "Polski" },
+  { id: "de", label: "Deutsch" },
+] as const;
 
 export function PortfolioPanel({
   items,
+  author,
   error,
-  publicHref = "/freelancer/public",
 }: {
   items: PortfolioCardItem[];
+  author?: PortfolioAuthor;
   error?: string;
-  publicHref?: string;
 }) {
-  const [addOpen, setAddOpen] = useState(false);
-  const withCover = items.filter((i) => i.cover && !i.cover.includes("landing/ico-")).length;
-  const withLink = items.filter((i) => i.projectUrl).length;
-  const totalValue = items.reduce((s, i) => s + (i.priceUsdt ?? 0), 0);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editing, setEditing] = useState<PortfolioCardItem | null>(null);
+  const [lang, setLang] = useState<(typeof LANGS)[number]["id"]>("ru");
 
   useEffect(() => {
-    if (!addOpen) return;
+    if (!drawerOpen) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAddOpen(false);
+      if (e.key === "Escape") {
+        setDrawerOpen(false);
+        setEditing(null);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = prev;
       window.removeEventListener("keydown", onKey);
     };
-  }, [addOpen]);
+  }, [drawerOpen]);
+
+  function openCreate() {
+    setEditing(null);
+    setLang("ru");
+    setDrawerOpen(true);
+  }
+
+  function openEdit(item: PortfolioCardItem) {
+    setEditing(item);
+    setLang("ru");
+    setDrawerOpen(true);
+  }
+
+  function closeDrawer() {
+    setDrawerOpen(false);
+    setEditing(null);
+  }
+
+  const categoryDefault =
+    editing?.tags.find((t) =>
+      (PROJECT_CATEGORIES as readonly string[]).includes(t),
+    ) ?? editing?.tags[0] ?? "";
 
   return (
     <div className="space-y-5">
@@ -71,66 +95,18 @@ export function PortfolioPanel({
               сразу повышают доверие.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              className="!rounded-full !px-5 shadow-[var(--df-glow)]"
-              onClick={() => setAddOpen(true)}
-            >
-              <span className="inline-flex items-center gap-2">
-                <Plus size={16} />
-                Добавить кейс
-              </span>
-            </Button>
-            <ButtonLink href={publicHref} variant="ghost" className="!rounded-full !px-5 !text-sm">
-              Публичный профиль
-            </ButtonLink>
-          </div>
+          <Button
+            type="button"
+            className="!rounded-full !px-5 shadow-[var(--df-glow)]"
+            onClick={openCreate}
+          >
+            <span className="inline-flex items-center gap-2">
+              <Plus size={16} />
+              Добавить кейс
+            </span>
+          </Button>
         </div>
       </section>
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border border-border bg-panel px-4 py-4">
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <FolderKanban size={14} className="text-accent" />
-            Кейсов
-          </div>
-          <div className="mt-2 font-[family-name:var(--font-syne)] text-2xl font-bold text-text">
-            {items.length}
-          </div>
-          <p className="mt-0.5 text-xs text-muted">{casesWord(items.length)} в каталоге</p>
-        </div>
-        <div className="rounded-2xl border border-border bg-panel px-4 py-4">
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <ImagePlus size={14} className="text-accent" />
-            С обложкой
-          </div>
-          <div className="mt-2 font-[family-name:var(--font-syne)] text-2xl font-bold text-text">
-            {withCover || items.length}
-          </div>
-          <p className="mt-0.5 text-xs text-muted">заметнее в ленте</p>
-        </div>
-        <div className="rounded-2xl border border-border bg-panel px-4 py-4">
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <Link2 size={14} className="text-accent" />
-            Со ссылкой
-          </div>
-          <div className="mt-2 font-[family-name:var(--font-syne)] text-2xl font-bold text-text">
-            {withLink}
-          </div>
-          <p className="mt-0.5 text-xs text-muted">можно открыть работу</p>
-        </div>
-        <div className="rounded-2xl border border-border bg-panel px-4 py-4">
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <Wallet size={14} className="text-accent" />
-            Сумма кейсов
-          </div>
-          <div className="mt-2 font-[family-name:var(--font-syne)] text-2xl font-bold text-text">
-            {totalValue > 0 ? totalValue.toLocaleString("ru-RU") : "—"}
-          </div>
-          <p className="mt-0.5 text-xs text-muted">USDT · ориентир</p>
-        </div>
-      </div>
 
       {error && (
         <p className="rounded-xl border border-danger/40 bg-[color-mix(in_srgb,var(--danger)_12%,transparent)] px-4 py-3 text-sm text-danger">
@@ -155,7 +131,7 @@ export function PortfolioPanel({
             <Button
               type="button"
               className="mt-2 !rounded-full shadow-[var(--df-glow)]"
-              onClick={() => setAddOpen(true)}
+              onClick={openCreate}
             >
               <span className="inline-flex items-center gap-2">
                 <Plus size={16} />
@@ -165,48 +141,41 @@ export function PortfolioPanel({
           </div>
         </Panel>
       ) : (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-sm text-muted">
-              Ваши кейсы · нажмите карточку, чтобы открыть
-            </p>
-            <button
-              type="button"
-              onClick={() => setAddOpen(true)}
-              className="text-sm font-medium text-accent hover:underline"
-            >
-              + Ещё кейс
-            </button>
-          </div>
-          <PortfolioGallery items={items} featured />
-        </div>
+        <PortfolioGallery
+          items={items}
+          author={author}
+          editable
+          onEdit={openEdit}
+          onDelete={async (item) => {
+            const fd = new FormData();
+            fd.set("caseId", item.id);
+            await deletePortfolioAction(fd);
+          }}
+        />
       )}
 
-      {addOpen && (
-        <div className="fixed inset-0 z-[70] flex justify-end">
+      {drawerOpen && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center p-0 sm:items-center sm:p-4">
           <button
             type="button"
             aria-label="Закрыть"
-            className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
-            onClick={() => setAddOpen(false)}
+            className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+            onClick={closeDrawer}
           />
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Новый кейс"
-            className="relative z-[71] flex h-full w-full max-w-lg flex-col border-l border-border bg-bg-deep shadow-[-24px_0_60px_rgba(0,0,0,0.45)]"
+            aria-label={editing ? "Редактировать работу" : "Загрузить работу"}
+            className="relative z-[71] flex max-h-[min(94dvh,900px)] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-border bg-bg-deep shadow-[0_24px_80px_rgba(0,0,0,0.5)] sm:rounded-3xl"
           >
-            <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
-              <div>
-                <h2 className="font-[family-name:var(--font-syne)] text-xl font-bold text-text">
-                  Новый кейс
-                </h2>
-                <p className="mt-1 text-sm text-muted">Заполните коротко — остальное можно позже</p>
-              </div>
+            <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
+              <h2 className="font-[family-name:var(--font-syne)] text-xl font-bold text-text">
+                {editing ? "Редактировать работу" : "Загрузить работу"}
+              </h2>
               <button
                 type="button"
-                onClick={() => setAddOpen(false)}
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border text-muted transition hover:border-accent/40 hover:text-accent"
+                onClick={closeDrawer}
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border text-muted transition hover:border-accent/40 hover:text-accent"
                 aria-label="Закрыть"
               >
                 <X size={16} />
@@ -214,75 +183,100 @@ export function PortfolioPanel({
             </div>
 
             <form
-              action={addPortfolioAction}
+              key={editing?.id ?? "new"}
+              action={editing ? updatePortfolioAction : addPortfolioAction}
               encType="multipart/form-data"
               className="flex min-h-0 flex-1 flex-col"
             >
+              {editing && <input type="hidden" name="caseId" value={editing.id} />}
               <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-5 py-5">
-                <div>
-                  <label className="mb-1.5 block text-sm text-text">
-                    Название <span className="text-accent">*</span>
-                  </label>
-                  <Input name="title" required placeholder="Например: Лендинг для кофейни" />
+                <div className="flex flex-wrap gap-2">
+                  {LANGS.map((l) => {
+                    const on = lang === l.id;
+                    return (
+                      <button
+                        key={l.id}
+                        type="button"
+                        onClick={() => setLang(l.id)}
+                        className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                          on
+                            ? "bg-panel-soft text-text ring-1 ring-border"
+                            : "text-muted hover:bg-panel-soft/60 hover:text-text"
+                        }`}
+                      >
+                        {l.label}
+                      </button>
+                    );
+                  })}
                 </div>
 
-                <PortfolioSummaryField />
-                <PortfolioCoverField />
+                <div>
+                  <label className="mb-1.5 block text-sm text-muted">
+                    Название работы <span className="text-accent">*</span>
+                  </label>
+                  <Input
+                    name="title"
+                    required
+                    defaultValue={editing?.title}
+                    placeholder="Например: Лендинг для кофейни"
+                    className="!rounded-xl"
+                  />
+                </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-sm text-text">Цена проекта</label>
-                    <div className="relative">
-                      <Input
-                        name="priceUsdt"
-                        type="number"
-                        min={1}
-                        step="1"
-                        placeholder="1200"
-                        className="!pr-16"
-                      />
-                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">
-                        USDT
-                      </span>
+                <PortfolioSummaryField defaultValue={editing?.summary} />
+                <PortfolioCoverField initialUrl={editing?.cover} />
+
+                <div>
+                  <label className="mb-1.5 block text-sm text-muted">Категория</label>
+                  <select
+                    name="category"
+                    defaultValue={categoryDefault}
+                    className="df-input w-full !rounded-xl appearance-none"
+                  >
+                    <option value="">Пожалуйста, выберите</option>
+                    {PROJECT_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm text-muted">Ссылка</label>
+                  <Input
+                    name="projectUrl"
+                    type="url"
+                    defaultValue={editing?.projectUrl}
+                    placeholder="https://myawesomewebsite.com"
+                    inputMode="url"
+                    className="!rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm text-muted">Стоимость</label>
+                  <div className="flex gap-2">
+                    <Input
+                      name="priceUsdt"
+                      type="number"
+                      min={1}
+                      step="1"
+                      defaultValue={editing?.priceUsdt}
+                      placeholder="1200"
+                      className="!rounded-xl min-w-0 flex-1"
+                    />
+                    <div className="grid min-w-[5.5rem] place-items-center rounded-xl border border-border bg-panel-soft px-3 text-sm font-semibold text-muted-2">
+                      USDT
                     </div>
                   </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm text-text">Ссылка на работу</label>
-                    <Input
-                      name="projectUrl"
-                      type="url"
-                      placeholder="https://…"
-                      inputMode="url"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm text-text">Теги</label>
-                  <Input name="tags" placeholder="Next.js, UI, TypeScript" />
-                  <p className="mt-1.5 text-xs text-muted">Через запятую</p>
-                </div>
-
-                <div className="rounded-2xl border border-border bg-panel-soft/40 p-4 text-sm text-muted">
-                  <div className="mb-2 inline-flex items-center gap-2 font-semibold text-accent">
-                    <Sparkles size={14} />
-                    Коротко
-                  </div>
-                  <ul className="space-y-1.5 text-xs leading-relaxed">
-                    <li>Название — конкретное</li>
-                    <li>Обложка делает кейс заметнее</li>
-                    <li>Цена и ссылка усиливают доверие</li>
-                  </ul>
                 </div>
               </div>
 
               <div className="border-t border-border px-5 py-4">
-                <Button type="submit" className="w-full !rounded-full shadow-[var(--df-glow)]">
-                  Сохранить кейс
+                <Button type="submit" className="w-full !rounded-full !py-3 shadow-[var(--df-glow)]">
+                  {editing ? "Сохранить изменения" : "Добавить работу"}
                 </Button>
-                <p className="mt-2 text-center text-[11px] text-muted">
-                  <span className="text-accent">*</span> — обязательные поля
-                </p>
               </div>
             </form>
           </div>

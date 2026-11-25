@@ -1,6 +1,6 @@
 import { FinancePanel, type FinanceTab } from "@/components/FinancePanel";
 import { requireUser } from "@/lib/auth";
-import { getBalances, listLedger } from "@/lib/store";
+import { getBalances, listLedger, listPendingDeposits } from "@/lib/store";
 
 const TABS = new Set<FinanceTab>(["balance", "safe", "archive", "stats"]);
 
@@ -14,11 +14,13 @@ export default async function ClientFinancePage({
   const tab = TABS.has(tabRaw as FinanceTab) ? (tabRaw as FinanceTab) : "balance";
   const balances = await getBalances(user.id);
   const ledger = await listLedger(user.id);
+  const pendingDeposits = await listPendingDeposits(user.id);
 
   return (
     <FinancePanel
       balances={balances}
       ledger={ledger}
+      pendingDeposits={pendingDeposits}
       error={error}
       role="client"
       walletAddress={user.walletAddress}

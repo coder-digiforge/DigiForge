@@ -33,19 +33,19 @@ export function getProfileCompletion(input: ProfileCompletionInput) {
       id: "title",
       label: "Указать специализацию",
       done: Boolean(input.title?.trim()),
-      href: "/freelancer/profile",
+      href: "/freelancer/public",
     },
     {
       id: "bio",
       label: "Рассказать о себе",
       done: Boolean(input.bio?.trim()),
-      href: "/freelancer/profile",
+      href: "/freelancer/public",
     },
     {
       id: "skills",
       label: "Добавить навыки",
       done: input.skills.filter(Boolean).length > 0,
-      href: "/freelancer/profile",
+      href: "/freelancer/public",
     },
     {
       id: "wallet",

@@ -314,7 +314,10 @@ export default async function ClientOverviewPage() {
                             <span className="truncate text-sm font-medium text-text">{p.title}</span>
                           </div>
                           <div className="mt-1 pl-6 text-[11px] text-muted">
-                            {p.budgetMin}–{p.budgetMax} USDT · {p.category}
+                            {p.budget != null && p.budget > 0
+                              ? `${p.budget} USDT`
+                              : "Не указан"}{" "}
+                            · {p.category}
                           </div>
                         </div>
                         <span className="shrink-0 text-[11px] text-muted">

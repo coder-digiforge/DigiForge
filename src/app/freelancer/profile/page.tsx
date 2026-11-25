@@ -7,6 +7,8 @@ import { requireUser } from "@/lib/auth";
 import { getProfileCompletion } from "@/lib/profileCompletion";
 import { listPortfolio } from "@/lib/store";
 
+export const dynamic = "force-dynamic";
+
 export default async function FreelancerProfilePage({
   searchParams,
 }: {
@@ -29,7 +31,7 @@ export default async function FreelancerProfilePage({
     <div className="space-y-6">
       <PageTitle
         title="Личные данные"
-        subtitle="Профиль для каталога и выплат в USDT"
+        subtitle="Аккаунт, фото и кошелёк для выплат в USDT"
         className="mb-0"
         action={
           <ButtonLink
@@ -37,7 +39,7 @@ export default async function FreelancerProfilePage({
             variant="ghost"
             className="!rounded-full !px-4 !py-2 !text-sm"
           >
-            Публичный профиль
+            Профиль фрилансера
           </ButtonLink>
         }
       />
@@ -87,7 +89,10 @@ export default async function FreelancerProfilePage({
               </div>
               {completion.percent < 100 && (
                 <p className="mt-2 text-xs text-muted">
-                  Дозаполните поля справа — выше шанс получить заказ
+                  Дозаполните поля и{" "}
+                  <Link href="/freelancer/public" className="text-accent hover:underline">
+                    профиль фрилансера
+                  </Link>
                 </p>
               )}
             </div>
@@ -109,14 +114,25 @@ export default async function FreelancerProfilePage({
         </Panel>
 
         <form action={updateProfileAction} encType="multipart/form-data" className="space-y-5">
+          <input type="hidden" name="workStatus" value={user.workStatus ?? "open"} />
+          <input type="hidden" name="legalForm" value={user.legalForm ?? "none"} />
+          <input type="hidden" name="motto" value={user.motto ?? ""} />
+          <input type="hidden" name="bidSignature" value={user.bidSignature ?? ""} />
+          {user.autoAddBidSignature && (
+            <input type="hidden" name="autoAddBidSignature" value="on" />
+          )}
+          {user.profileI18n && (
+            <input type="hidden" name="profileI18n" value={JSON.stringify(user.profileI18n)} />
+          )}
+
           <Panel className="overflow-hidden p-0">
             <div className="flex items-center gap-3 border-b border-border px-5 py-4 md:px-6">
               <div className="grid h-9 w-9 place-items-center rounded-full bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-accent">
                 <UserRound size={16} />
               </div>
               <div>
-                <h2 className="font-semibold text-text">Профиль</h2>
-                <p className="text-xs text-muted">Как вас видят заказчики</p>
+                <h2 className="font-semibold text-text">Аккаунт</h2>
+                <p className="text-xs text-muted">Имя и фото в кабинете</p>
               </div>
             </div>
             <div className="space-y-4 p-5 md:p-6">
@@ -128,56 +144,14 @@ export default async function FreelancerProfilePage({
                 <Input name="name" defaultValue={user.name} required placeholder="Сергей" />
               </div>
               <div>
-                <label className="mb-1.5 block text-sm text-text">Специализация</label>
-                <Input
-                  name="title"
-                  defaultValue={user.title ?? ""}
-                  placeholder="Full-stack developer"
-                />
-                <p className="mt-1.5 text-xs text-muted">Коротко: кто вы и в чём сила</p>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm text-text">О себе</label>
+                <label className="mb-1.5 block text-sm text-text">Кратко о себе</label>
                 <Textarea
                   name="bio"
                   defaultValue={user.bio ?? ""}
-                  placeholder="Опыт, стек, с какими задачами работаете"
-                  className="!min-h-28"
+                  placeholder="Коротко для аккаунта — подробности в профиле фрилансера"
+                  className="!min-h-24"
                 />
               </div>
-            </div>
-          </Panel>
-
-          <Panel className="overflow-hidden p-0">
-            <div className="flex items-center gap-3 border-b border-border px-5 py-4 md:px-6">
-              <div className="grid h-9 w-9 place-items-center rounded-full bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-accent">
-                <Briefcase size={16} />
-              </div>
-              <div>
-                <h2 className="font-semibold text-text">Навыки</h2>
-                <p className="text-xs text-muted">По ним вас находят в каталоге</p>
-              </div>
-            </div>
-            <div className="p-5 md:p-6">
-              <label className="mb-1.5 block text-sm text-text">Список навыков</label>
-              <Input
-                name="skills"
-                defaultValue={user.skills.join(", ")}
-                placeholder="React, Next.js, TypeScript"
-              />
-              <p className="mt-1.5 text-xs text-muted">Через запятую</p>
-              {user.skills.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {user.skills.map((s) => (
-                    <span
-                      key={s}
-                      className="rounded-full border border-border bg-panel-soft px-2.5 py-1 text-[11px] text-muted-2"
-                    >
-                      {s}
-                    </span>
-                  ))}
-                </div>
-              )}
             </div>
           </Panel>
 
@@ -221,9 +195,16 @@ export default async function FreelancerProfilePage({
             </div>
           </Panel>
 
+          <input type="hidden" name="title" value={user.title ?? ""} />
+          <input type="hidden" name="skills" value={user.skills.join(", ")} />
+
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <Link href="/freelancer/portfolio" className="text-sm text-muted hover:text-accent">
-              Дополнить портфолио →
+            <Link
+              href="/freelancer/public"
+              className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-accent"
+            >
+              <Briefcase size={14} />
+              Редактировать профиль фрилансера →
             </Link>
             <Button type="submit" className="!rounded-full !px-6">
               Сохранить изменения

@@ -65,6 +65,23 @@ export interface LoginSession {
   current?: boolean;
 }
 
+export type FreelancerWorkStatus =
+  | "open"
+  | "light_busy"
+  | "busy"
+  | "paused"
+  | "vacation";
+
+export type FreelancerLegalForm = "none" | "individual" | "sole" | "company";
+
+export type ProfileContentLang = "ru" | "en" | "uk" | "pl" | "de";
+
+export type ProfileLocalizedBlock = {
+  bio?: string;
+  motto?: string;
+  bidSignature?: string;
+};
+
 export interface User {
   id: string;
   email: string;
@@ -81,12 +98,30 @@ export interface User {
   walletNetwork?: CryptoNetwork;
   walletAsset?: CryptoAsset;
   twoFaEnabled: boolean;
+  /** Base32 TOTP secret — never expose via publicUser. */
+  twoFaSecret?: string | null;
+  /** Pending secret while user confirms first code. */
+  twoFaPendingSecret?: string | null;
+  /** Incremented to invalidate all signed session cookies. */
+  sessionVersion?: number;
+  emailVerifiedAt?: string | null;
+  emailVerifyTokenHash?: string | null;
+  emailVerifyExpiresAt?: string | null;
   digiPrimeUntil?: string | null;
   /** Сейчас идёт бесплатный триал */
   digiPrimeTrial?: boolean;
   /** Триал уже использовался */
   digiPrimeTrialUsed?: boolean;
   digiPrimeAutoRenew?: boolean;
+  /** Доступность для заказов */
+  workStatus?: FreelancerWorkStatus;
+  /** Юридический статус */
+  legalForm?: FreelancerLegalForm;
+  motto?: string;
+  bidSignature?: string;
+  autoAddBidSignature?: boolean;
+  /** Локализованные тексты профиля */
+  profileI18n?: Partial<Record<ProfileContentLang, ProfileLocalizedBlock>>;
   settings?: UserSettings;
   loginLog?: LoginSession[];
   deactivatedAt?: string | null;
@@ -95,18 +130,36 @@ export interface User {
   createdAt: string;
 }
 
+export interface ProjectAttachment {
+  name: string;
+  url: string;
+  mime?: string;
+  size?: number;
+}
+
 export interface Project {
   id: string;
   clientId: string;
   title: string;
   description: string;
   category: string;
-  budgetMin: number;
-  budgetMax: number;
+  /** Fixed budget in USDT, or null when client left price open. */
+  budget: number | null;
   currency: "USDT";
   deadlineDays: number;
   status: ProjectStatus;
   bidsHidden: boolean;
+  /** Skill tags for matching / filters. */
+  skills?: string[];
+  attachments?: ProjectAttachment[];
+  createdAt: string;
+}
+
+export interface Favorite {
+  id: string;
+  userId: string;
+  targetType: "project" | "freelancer";
+  targetId: string;
   createdAt: string;
 }
 
@@ -140,6 +193,8 @@ export interface Deal {
   releasedAt?: string;
   disputedAt?: string;
   fundingDeadlineAt?: string;
+  /** After deliver — cron auto-releases if client silent. */
+  autoReleaseAt?: string;
   createdAt: string;
 }
 
@@ -233,6 +288,10 @@ export interface DepositRequest {
   status: "awaiting" | "confirming" | "completed" | "expired";
   txHash?: string;
   providerRef?: string;
+  invoiceUrl?: string;
+  payAmount?: number;
+  payCurrency?: string;
+  providerSimulated?: boolean;
   expiresAt: string;
   completedAt?: string;
   createdAt: string;
@@ -247,6 +306,8 @@ export interface WithdrawalRequest {
   address: string;
   status: "pending" | "processing" | "completed" | "rejected";
   txHash?: string;
+  providerRef?: string;
+  providerSimulated?: boolean;
   reviewedBy?: string;
   reviewedAt?: string;
   rejectReason?: string;
@@ -268,6 +329,10 @@ export type AuditAction =
   | "prime.buy"
   | "auth.login"
   | "auth.login_failed"
+  | "auth.sessions_cleared"
+  | "auth.2fa_enabled"
+  | "auth.2fa_disabled"
+  | "auth.email_verified"
   | "security.sensitive_change";
 
 export interface AuditLogEntry {
@@ -307,6 +372,7 @@ export interface DbShape {
   messages: Message[];
   reviews: Review[];
   portfolio: PortfolioCase[];
+  favorites: Favorite[];
   notifications: NotificationItem[];
   deposits: DepositRequest[];
   withdrawals: WithdrawalRequest[];

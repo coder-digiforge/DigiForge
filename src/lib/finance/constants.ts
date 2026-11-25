@@ -4,6 +4,8 @@ export const DEFAULT_FEE_PERCENT = 10;
 /** Digi Prime list price (USDT). */
 export const DIGI_PRIME_PRICE_USDT = 29;
 export const DIGI_PRIME_DAYS = 30;
+/** Launch promo: free DigiPrime days granted on freelancer registration. */
+export const DIGI_PRIME_LAUNCH_DAYS = 60;
 
 /** Money limits (USDT). */
 export const MIN_DEPOSIT_USDT = 1;
@@ -26,6 +28,9 @@ export const PENDING_FUNDING_TTL_HOURS = 48;
 
 /** Deposit invoices expire if unpaid. */
 export const DEPOSIT_TTL_HOURS = 2;
+
+/** After deliver, auto-release if client does not act. */
+export const AUTO_RELEASE_AFTER_DELIVER_HOURS = 72;
 
 /** Optimistic concurrency retries for store writes. */
 export const STORE_CAS_RETRIES = 5;

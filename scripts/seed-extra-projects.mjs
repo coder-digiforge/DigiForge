@@ -32,8 +32,7 @@ const extras = [
     description:
       "Каталог, корзина, кабинет продавца и оплата в USDT. Нужен аккуратный UI и деплой.",
     category: "Сайты и лендинги",
-    budgetMin: 2500,
-    budgetMax: 4200,
+    budget: 2500,
     currency: "USDT",
     deadlineDays: 30,
     status: "open",
@@ -47,8 +46,7 @@ const extras = [
     description:
       "Figma: hero, тарифы, FAQ и мобильные состояния. Нужен сильный визуальный якорь.",
     category: "UI/UX дизайн",
-    budgetMin: 600,
-    budgetMax: 1100,
+    budget: 600,
     currency: "USDT",
     deadlineDays: 10,
     status: "open",
@@ -62,8 +60,7 @@ const extras = [
     description:
       "Клиентское приложение: карта, статус заказа, push. Backend уже есть — нужен фронт.",
     category: "Мобильные приложения",
-    budgetMin: 1800,
-    budgetMax: 3200,
+    budget: 1800,
     currency: "USDT",
     deadlineDays: 28,
     status: "open",
@@ -77,8 +74,7 @@ const extras = [
     description:
       "Ежедневный дайджест метрик из Google Sheets в Telegram-канал + алерты по порогам.",
     category: "AI и автоматизация",
-    budgetMin: 500,
-    budgetMax: 900,
+    budget: 500,
     currency: "USDT",
     deadlineDays: 7,
     status: "open",
@@ -92,8 +88,7 @@ const extras = [
     description:
       "Позиционирование, 12 постов и одностраничник под waitlist. Крипто-аудитория EU.",
     category: "Маркетинг и рост",
-    budgetMin: 700,
-    budgetMax: 1300,
+    budget: 700,
     currency: "USDT",
     deadlineDays: 12,
     status: "open",
@@ -107,8 +102,7 @@ const extras = [
     description:
       "Карта гипотез, JTBD-интервью гайд и приоритизация бэклога на 6 недель.",
     category: "Стратегия продукта",
-    budgetMin: 1100,
-    budgetMax: 1900,
+    budget: 1100,
     currency: "USDT",
     deadlineDays: 16,
     status: "open",

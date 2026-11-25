@@ -3,6 +3,12 @@ import { redirect } from "next/navigation";
 import { pushAudit } from "./finance/audit";
 import { needsRehash, verifyPassword, hashPassword } from "./password";
 import {
+  SESSION_COOKIE,
+  createSessionToken,
+  parseLegacyUserIdCookie,
+  parseSessionToken,
+} from "./session";
+import {
   createUser,
   findUserByEmail,
   findUserById,
@@ -10,8 +16,6 @@ import {
   updateDb,
 } from "./store";
 import type { Role, User } from "./types";
-
-const COOKIE = "df_session";
 
 function sessionCookieOptions(maxAge = 60 * 60 * 24 * 7) {
   const secure = process.env.NODE_ENV === "production";
@@ -24,11 +28,29 @@ function sessionCookieOptions(maxAge = 60 * 60 * 24 * 7) {
   };
 }
 
+async function setSessionCookie(user: User) {
+  const jar = await cookies();
+  const version = user.sessionVersion ?? 0;
+  const token = createSessionToken(user.id, version);
+  jar.set(SESSION_COOKIE, token, sessionCookieOptions());
+}
+
 export async function getSessionUser(): Promise<ReturnType<typeof publicUser> | null> {
   const jar = await cookies();
-  const id = jar.get(COOKIE)?.value;
-  if (!id || !/^u-[\w-]+$/.test(id)) return null;
-  const user = await findUserById(id);
+  const raw = jar.get(SESSION_COOKIE)?.value;
+  const parsed = parseSessionToken(raw);
+  if (parsed) {
+    const user = await findUserById(parsed.uid);
+    if (!user || user.deactivatedAt) return null;
+    if ((user.sessionVersion ?? 0) !== parsed.v) return null;
+    return publicUser(user);
+  }
+
+  // Legacy raw userId cookie — read-only here (cookie writes only in Server Actions).
+  // Next login/register will issue a signed token.
+  const legacyId = parseLegacyUserIdCookie(raw);
+  if (!legacyId) return null;
+  const user = await findUserById(legacyId);
   if (!user || user.deactivatedAt) return null;
   return publicUser(user);
 }
@@ -60,10 +82,14 @@ export async function login(email: string, password: string) {
     throw new Error("Неверный email или пароль");
   }
 
+  let sessionUser = user;
   if (needsRehash(user.password)) {
     await updateDb((db) => {
       const row = db.users.find((u) => u.id === user.id);
-      if (row) row.password = hashPassword(password);
+      if (row) {
+        row.password = hashPassword(password);
+        if (typeof row.sessionVersion !== "number") row.sessionVersion = 0;
+      }
       pushAudit(db, {
         actorUserId: user.id,
         action: "auth.login",
@@ -72,6 +98,7 @@ export async function login(email: string, password: string) {
         meta: { rehashed: true },
       });
     });
+    sessionUser = (await findUserById(user.id)) ?? user;
   } else {
     try {
       await updateDb((db) => {
@@ -87,9 +114,8 @@ export async function login(email: string, password: string) {
     }
   }
 
-  const jar = await cookies();
-  jar.set(COOKIE, user.id, sessionCookieOptions());
-  return publicUser(user);
+  await setSessionCookie(sessionUser);
+  return publicUser(sessionUser);
 }
 
 export async function register(input: {
@@ -102,14 +128,13 @@ export async function register(input: {
     throw new Error("Пароль — минимум 8 символов");
   }
   const user = await createUser(input);
-  const jar = await cookies();
-  jar.set(COOKIE, user.id, sessionCookieOptions());
+  await setSessionCookie(user);
   return publicUser(user);
 }
 
 export async function logout() {
   const jar = await cookies();
-  jar.set(COOKIE, "", { ...sessionCookieOptions(0), maxAge: 0 });
+  jar.set(SESSION_COOKIE, "", { ...sessionCookieOptions(0), maxAge: 0 });
 }
 
 export function homeForRole(role: Role) {
