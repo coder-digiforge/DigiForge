@@ -3,6 +3,6 @@ export function isRelationalStore() {
   const mode = (process.env.STORE_MODE ?? "").toLowerCase();
   if (mode === "relational") return true;
   if (mode === "json") return false;
-  // Production defaults to relational for launch readiness.
-  return process.env.NODE_ENV === "production";
+  // Default json until STORE_MODE=relational is set after schema migration.
+  return false;
 }

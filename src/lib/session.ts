@@ -2,9 +2,15 @@ import { createHmac, timingSafeEqual } from "crypto";
 
 const COOKIE = "df_session";
 
-function secret() {
+function configuredSecret() {
   const s = process.env.NEON_AUTH_COOKIE_SECRET;
   if (s && s.length >= 16) return s;
+  return null;
+}
+
+function secret() {
+  const s = configuredSecret();
+  if (s) return s;
   if (process.env.NODE_ENV === "production") {
     throw new Error("NEON_AUTH_COOKIE_SECRET is required in production");
   }
@@ -40,6 +46,8 @@ export function createSessionToken(userId: string, sessionVersion: number): stri
 
 export function parseSessionToken(token: string | undefined | null): SessionPayload | null {
   if (!token || !token.includes(".")) return null;
+  // Missing prod secret must not 500 public pages — treat as logged out.
+  if (!configuredSecret() && process.env.NODE_ENV === "production") return null;
   const [body, sig] = token.split(".");
   if (!body || !sig) return null;
   const expected = sign(body);
