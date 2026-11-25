@@ -19,6 +19,7 @@ export function ensureFinanceShape(db: DbShape): DbShape {
   if (!Array.isArray(db.deals)) db.deals = [];
   if (!Array.isArray(db.projects)) db.projects = [];
   if (!Array.isArray(db.favorites)) db.favorites = [];
+  if (!Array.isArray(db.projectComments)) db.projectComments = [];
 
   for (const project of db.projects as Array<
     Project & { budgetMin?: number; budgetMax?: number }

@@ -2,13 +2,25 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   acceptBidAction,
+  addProjectCommentAction,
   closeProjectAction,
+  messageBidderAction,
   rejectBidAction,
+  thankProjectCommentAction,
 } from "@/app/actions/marketplace";
-import { Button, ButtonLink, Chip, Input, PageTitle, Panel } from "@/components/ui";
+import { UserAvatar } from "@/components/UserAvatar";
+import {
+  Button,
+  ButtonLink,
+  Chip,
+  Input,
+  PageTitle,
+  Panel,
+  Textarea,
+} from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { formatProjectBudget } from "@/lib/project-budget";
-import { getDb, getProject, listBidsForProject } from "@/lib/store";
+import { getDb, getProject, listBidsForProject, listProjectComments } from "@/lib/store";
 
 export default async function ClientProjectDetailPage({
   params,
@@ -23,7 +35,19 @@ export default async function ClientProjectDetailPage({
   const project = await getProject(id);
   if (!project || project.clientId !== user.id) notFound();
   const bids = await listBidsForProject(id);
+  const comments = await listProjectComments(id);
   const db = await getDb();
+  const returnTo = `/client/projects/${id}`;
+  const roots = comments.filter((c) => !c.parentId);
+  const repliesOf = (cid: string) => comments.filter((c) => c.parentId === cid);
+  const threadByFreelancer = new Map<string, string>();
+  for (const t of db.threads) {
+    if (t.projectId !== id || !t.participantIds.includes(user.id)) continue;
+    const other = t.participantIds.find((pid) => pid !== user.id);
+    if (!other) continue;
+    const prev = threadByFreelancer.get(other);
+    if (!prev || t.dealId) threadByFreelancer.set(other, t.id);
+  }
 
   return (
     <Panel className="p-6 md:p-8">
@@ -86,6 +110,7 @@ export default async function ClientProjectDetailPage({
         {bids.length === 0 && <p className="text-sm text-muted">Пока нет ставок</p>}
         {bids.map((b) => {
           const fl = db.users.find((u) => u.id === b.freelancerId);
+          const existingThreadId = threadByFreelancer.get(b.freelancerId);
           return (
             <div key={b.id} className="rounded-xl border border-border p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -102,6 +127,35 @@ export default async function ClientProjectDetailPage({
                   </div>
                   <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{b.comment}</p>
                   <div className="mt-2 text-xs text-muted">Статус: {b.status}</div>
+                  {(b.status === "pending" || b.status === "accepted") && (
+                    <form action={messageBidderAction} className="mt-4 max-w-lg space-y-2">
+                      <input type="hidden" name="projectId" value={project.id} />
+                      <input type="hidden" name="freelancerId" value={b.freelancerId} />
+                      <label className="block text-xs text-muted">
+                        Сообщение фрилансеру
+                        <Textarea
+                          name="body"
+                          className="mt-1"
+                          placeholder="Уточните детали по отклику…"
+                          required
+                        />
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="submit" variant="ghost" className="!text-sm">
+                          Написать
+                        </Button>
+                        {existingThreadId && (
+                          <ButtonLink
+                            href={`/client/messages/${existingThreadId}`}
+                            variant="ghost"
+                            className="!text-sm"
+                          >
+                            Открыть чат
+                          </ButtonLink>
+                        )}
+                      </div>
+                    </form>
+                  )}
                 </div>
                 {project.status === "open" && b.status === "pending" && (
                   <div className="flex w-full max-w-xs flex-col gap-2 sm:w-auto">
@@ -135,6 +189,83 @@ export default async function ClientProjectDetailPage({
             </div>
           );
         })}
+      </div>
+
+      <h2 className="mt-10 font-[family-name:var(--font-syne)] text-lg font-semibold">
+        Обсуждение
+      </h2>
+      <p className="mt-1 text-sm text-muted">
+        Публичные уточняющие вопросы по проекту — как на бирже.
+      </p>
+      <div className="mt-4 space-y-3">
+        {roots.length === 0 && (
+          <p className="text-sm text-muted">Пока тихо — фрилансеры могут задать вопрос здесь.</p>
+        )}
+        {roots.map((root) => {
+          const author = db.users.find((u) => u.id === root.authorId);
+          const replies = repliesOf(root.id);
+          return (
+            <div key={root.id} className="space-y-2">
+              <div className="rounded-xl border border-border p-4">
+                <div className="flex items-start gap-3">
+                  <UserAvatar name={author?.name ?? "Участник"} url={author?.avatarUrl} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold">{author?.name ?? "Участник"}</div>
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{root.body}</p>
+                    <form action={thankProjectCommentAction} className="mt-2">
+                      <input type="hidden" name="commentId" value={root.id} />
+                      <input type="hidden" name="returnTo" value={returnTo} />
+                      <button type="submit" className="text-xs text-muted hover:text-accent">
+                        Поблагодарить
+                        {root.thanksCount > 0 ? ` · ${root.thanksCount}` : ""}
+                      </button>
+                    </form>
+                    <form action={addProjectCommentAction} className="mt-3 space-y-2">
+                      <input type="hidden" name="projectId" value={project.id} />
+                      <input type="hidden" name="parentId" value={root.id} />
+                      <input type="hidden" name="returnTo" value={returnTo} />
+                      <Textarea name="body" required placeholder="Ответить…" className="min-h-[64px]" />
+                      <Button type="submit" variant="ghost" className="!text-sm">
+                        Ответить
+                      </Button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+              {replies.map((r) => {
+                const ra = db.users.find((u) => u.id === r.authorId);
+                return (
+                  <div
+                    key={r.id}
+                    className="ml-6 rounded-xl border border-border bg-panel-soft/40 p-4 md:ml-10"
+                  >
+                    <div className="flex items-start gap-3">
+                      <UserAvatar name={ra?.name ?? "Участник"} url={ra?.avatarUrl} size={32} />
+                      <div>
+                        <div className="text-sm font-semibold">{ra?.name ?? "Участник"}</div>
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-muted">{r.body}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+        <form action={addProjectCommentAction} className="space-y-2 rounded-xl border border-border p-4">
+          <input type="hidden" name="projectId" value={project.id} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+          <label className="block text-xs text-muted">
+            Добавить комментарий
+            <Textarea
+              name="body"
+              required
+              className="mt-1"
+              placeholder="Ответьте на вопросы или уточните ТЗ…"
+            />
+          </label>
+          <Button type="submit">Добавить комментарий</Button>
+        </form>
       </div>
     </Panel>
   );

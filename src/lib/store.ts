@@ -55,6 +55,7 @@ import type {
   PortfolioCase,
   Project,
   ProjectAttachment,
+  ProjectComment,
   Review,
   Thread,
   User,
@@ -1984,6 +1985,166 @@ export async function toggleFavorite(
     favorited = true;
   });
   return favorited;
+}
+
+export async function listProjectComments(projectId: string) {
+  const db = await readDb();
+  return db.projectComments
+    .filter((c) => c.projectId === projectId)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export async function addProjectComment(input: {
+  projectId: string;
+  authorId: string;
+  body: string;
+  parentId?: string | null;
+}) {
+  const body = input.body.trim();
+  if (!body) throw new Error("Напишите комментарий");
+  if (body.length > 4000) throw new Error("Слишком длинный комментарий");
+
+  let created: ProjectComment | null = null;
+  await updateDb((db) => {
+    const project = db.projects.find((p) => p.id === input.projectId);
+    if (!project) throw new Error("Проект не найден");
+    if (project.status === "cancelled") throw new Error("Проект закрыт");
+    const author = db.users.find((u) => u.id === input.authorId);
+    if (!author || author.role === "admin") throw new Error("Нет доступа");
+
+    let parentId: string | null = input.parentId ?? null;
+    if (parentId) {
+      const parent = db.projectComments.find((c) => c.id === parentId);
+      if (!parent || parent.projectId !== input.projectId) {
+        throw new Error("Комментарий для ответа не найден");
+      }
+      // one-level nest: reply to reply sticks under root
+      if (parent.parentId) parentId = parent.parentId;
+    }
+
+    const comment: ProjectComment = {
+      id: newId("pc"),
+      projectId: input.projectId,
+      authorId: input.authorId,
+      parentId,
+      body,
+      thanksCount: 0,
+      thankedBy: [],
+      createdAt: new Date().toISOString(),
+    };
+    db.projectComments.push(comment);
+    created = comment;
+
+    const notifyId =
+      parentId != null
+        ? db.projectComments.find((c) => c.id === parentId)?.authorId
+        : project.clientId;
+    if (notifyId && notifyId !== input.authorId) {
+      const notifyUser = db.users.find((u) => u.id === notifyId);
+      const href =
+        notifyUser?.role === "freelancer"
+          ? `/freelancer/projects?project=${encodeURIComponent(project.id)}`
+          : notifyUser?.role === "client"
+            ? `/client/projects/${project.id}`
+            : `/projects/${project.id}`;
+      db.notifications.push({
+        id: newId("n"),
+        userId: notifyId,
+        title: parentId ? "Ответ в обсуждении" : "Новый комментарий",
+        body: `«${project.title}»: ${body.slice(0, 80)}`,
+        read: false,
+        href,
+        createdAt: comment.createdAt,
+      });
+    }
+  });
+  return created!;
+}
+
+export async function thankProjectComment(commentId: string, userId: string) {
+  await updateDb((db) => {
+    const comment = db.projectComments.find((c) => c.id === commentId);
+    if (!comment) throw new Error("Комментарий не найден");
+    if (comment.authorId === userId) throw new Error("Нельзя благодарить свой комментарий");
+    if (comment.thankedBy.includes(userId)) {
+      comment.thankedBy = comment.thankedBy.filter((id) => id !== userId);
+      comment.thanksCount = Math.max(0, comment.thanksCount - 1);
+      return;
+    }
+    comment.thankedBy.push(userId);
+    comment.thanksCount += 1;
+  });
+}
+
+/** Open or reuse a project chat after a freelancer placed a bid. */
+export async function startChatWithBidder(input: {
+  clientId: string;
+  projectId: string;
+  freelancerId: string;
+  body?: string;
+}) {
+  let threadId = "";
+  await updateDb((db) => {
+    const project = db.projects.find((p) => p.id === input.projectId);
+    if (!project) throw new Error("Проект не найден");
+    if (project.clientId !== input.clientId) throw new Error("Нет доступа");
+    const bid = db.bids.find(
+      (b) =>
+        b.projectId === input.projectId &&
+        b.freelancerId === input.freelancerId,
+    );
+    if (!bid) throw new Error("Сначала нужен отклик фрилансера");
+    const freelancer = db.users.find(
+      (u) => u.id === input.freelancerId && u.role === "freelancer",
+    );
+    if (!freelancer) throw new Error("Фрилансер не найден");
+
+    const candidates = db.threads.filter(
+      (t) =>
+        t.projectId === project.id &&
+        t.participantIds.includes(input.clientId) &&
+        t.participantIds.includes(input.freelancerId),
+    );
+    let thread =
+      candidates.find((t) => t.dealId) ??
+      candidates.find((t) => !t.dealId) ??
+      null;
+    const now = new Date().toISOString();
+    if (!thread) {
+      thread = {
+        id: newId("t"),
+        projectId: project.id,
+        participantIds: [input.clientId, input.freelancerId],
+        title: project.title,
+        updatedAt: now,
+      };
+      db.threads.push(thread);
+    } else {
+      thread.updatedAt = now;
+    }
+    threadId = thread.id;
+
+    const note = (input.body ?? "").trim();
+    if (note) {
+      db.messages.push({
+        id: newId("m"),
+        threadId: thread.id,
+        senderId: input.clientId,
+        body: note,
+        createdAt: now,
+      });
+      db.notifications.push({
+        id: newId("n"),
+        userId: input.freelancerId,
+        title: "Сообщение по отклику",
+        body: note.slice(0, 80),
+        read: false,
+        href: `/freelancer/messages/${thread.id}`,
+        createdAt: now,
+      });
+    }
+  });
+  return threadId;
 }
 
 export async function inviteFreelancerToProject(input: {

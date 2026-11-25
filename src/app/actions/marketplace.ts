@@ -20,12 +20,15 @@ import {
   deliverDeal,
   disputeDeal,
   fundDeal,
+  addProjectComment,
   inviteFreelancerToProject,
   rejectBid,
   releaseDeal,
   requestWithdraw,
   markNotificationsRead,
   sendMessage,
+  startChatWithBidder,
+  thankProjectComment,
   toggleFavorite,
   updateBid,
   updateProject,
@@ -256,6 +259,74 @@ export async function inviteFreelancerAction(formData: FormData) {
   }
   revalidatePath(`/client/freelancers/${freelancerId}`);
   redirect(`/client/freelancers/${freelancerId}?invited=1`);
+}
+
+export async function addProjectCommentAction(formData: FormData) {
+  const user = await requireUser(["client", "freelancer"]);
+  const projectId = String(formData.get("projectId") ?? "");
+  const parentIdRaw = String(formData.get("parentId") ?? "").trim();
+  const returnTo = String(formData.get("returnTo") ?? "").trim();
+  const fallback =
+    user.role === "freelancer"
+      ? `/freelancer/projects?project=${encodeURIComponent(projectId)}`
+      : `/client/projects/${projectId}`;
+  const dest = returnTo.startsWith("/") ? returnTo : fallback;
+  try {
+    await addProjectComment({
+      projectId,
+      authorId: user.id,
+      body: String(formData.get("body") ?? ""),
+      parentId: parentIdRaw || null,
+    });
+  } catch (e) {
+    redirect(
+      `${dest}${dest.includes("?") ? "&" : "?"}error=${encodeURIComponent((e as Error).message)}`,
+    );
+  }
+  revalidatePath("/projects");
+  revalidatePath("/freelancer/projects");
+  revalidatePath(`/client/projects/${projectId}`);
+  redirect(dest);
+}
+
+export async function thankProjectCommentAction(formData: FormData) {
+  const user = await requireUser(["client", "freelancer"]);
+  const commentId = String(formData.get("commentId") ?? "");
+  const returnTo = String(formData.get("returnTo") ?? "/projects");
+  try {
+    await thankProjectComment(commentId, user.id);
+  } catch (e) {
+    redirect(
+      `${returnTo}${returnTo.includes("?") ? "&" : "?"}error=${encodeURIComponent((e as Error).message)}`,
+    );
+  }
+  revalidatePath("/projects");
+  revalidatePath("/freelancer/projects");
+  redirect(returnTo);
+}
+
+export async function messageBidderAction(formData: FormData) {
+  const user = await requireUser(["client"]);
+  const projectId = String(formData.get("projectId") ?? "");
+  const freelancerId = String(formData.get("freelancerId") ?? "");
+  const body = String(formData.get("body") ?? "").trim();
+  let threadId = "";
+  try {
+    threadId = await startChatWithBidder({
+      clientId: user.id,
+      projectId,
+      freelancerId,
+      body: body || undefined,
+    });
+  } catch (e) {
+    redirect(
+      `/client/projects/${projectId}?error=${encodeURIComponent((e as Error).message)}`,
+    );
+  }
+  revalidatePath("/client/messages");
+  revalidatePath(`/client/messages/${threadId}`);
+  revalidatePath(`/client/projects/${projectId}`);
+  redirect(`/client/messages/${threadId}`);
 }
 
 export async function acceptBidAction(formData: FormData) {

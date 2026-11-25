@@ -163,6 +163,18 @@ export interface Favorite {
   createdAt: string;
 }
 
+/** Public project discussion (Freelancehunt-style «Обсуждение»). */
+export interface ProjectComment {
+  id: string;
+  projectId: string;
+  authorId: string;
+  parentId?: string | null;
+  body: string;
+  thanksCount: number;
+  thankedBy: string[];
+  createdAt: string;
+}
+
 export interface Bid {
   id: string;
   projectId: string;
@@ -373,6 +385,7 @@ export interface DbShape {
   reviews: Review[];
   portfolio: PortfolioCase[];
   favorites: Favorite[];
+  projectComments: ProjectComment[];
   notifications: NotificationItem[];
   deposits: DepositRequest[];
   withdrawals: WithdrawalRequest[];

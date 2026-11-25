@@ -13,11 +13,14 @@ import {
   ShieldCheck,
   Sparkles,
   Star,
+  ThumbsUp,
   Wallet,
   X,
 } from "lucide-react";
 import {
+  addProjectCommentAction,
   createBidAction,
+  thankProjectCommentAction,
   updateBidAction,
   withdrawBidAction,
 } from "@/app/actions/marketplace";
@@ -25,7 +28,7 @@ import { FavoriteButton } from "@/components/FavoriteButton";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Button, ButtonLink, EmptyState, Input, Panel, Textarea } from "@/components/ui";
 import { formatPostedAgo } from "@/lib/project-catalog";
-import type { Bid, Project } from "@/lib/types";
+import type { Bid, Project, Role } from "@/lib/types";
 
 export type ProjectBidPreview = {
   id: string;
@@ -47,9 +50,18 @@ export type ProjectBidPreview = {
 
 export type ProjectDiscussion = {
   id: string;
-  author: string;
+  parentId?: string | null;
   body: string;
   createdAt: string;
+  thanksCount: number;
+  thankedByMe?: boolean;
+  author: {
+    id: string;
+    name: string;
+    avatarUrl?: string;
+    title?: string;
+    role?: Role | string;
+  };
 };
 
 export type ProjectCatalogItem = {
@@ -130,6 +142,7 @@ export function ProjectCatalogBoard({
   const [activeId, setActiveId] = useState<string | null>(initialProjectId ?? null);
   const [tab, setTab] = useState<Tab>("about");
   const [showBidForm, setShowBidForm] = useState(false);
+  const [replyToId, setReplyToId] = useState<string | null>(null);
   const active = items.find((i) => i.project.id === activeId) ?? null;
 
   useEffect(() => {
@@ -159,6 +172,7 @@ export function ProjectCatalogBoard({
 
   const openProject = (id: string) => {
     setActiveId(id);
+    setReplyToId(null);
     const url = new URL(window.location.href);
     url.searchParams.set("project", id);
     window.history.replaceState(null, "", `${url.pathname}?${url.searchParams.toString()}`);
@@ -167,6 +181,7 @@ export function ProjectCatalogBoard({
   const closeProject = () => {
     setActiveId(null);
     setShowBidForm(false);
+    setReplyToId(null);
     const url = new URL(window.location.href);
     url.searchParams.delete("project");
     const qs = url.searchParams.toString();
@@ -597,54 +612,19 @@ export function ProjectCatalogBoard({
                   )}
 
                   {tab === "talk" && (
-                    <div className="space-y-3">
-                      {active.discussions.length === 0 ? (
-                        <EmptyState
-                          title="Пока тихо"
-                          hint="Уточняющие вопросы появятся здесь — пока пишите ставку с деталями"
-                        />
-                      ) : (
-                        active.discussions.map((d) => (
-                          <SideCard key={d.id}>
-                            <div className="flex items-baseline justify-between gap-3">
-                              <span className="text-sm font-semibold text-text">{d.author}</span>
-                              <span className="text-[11px] text-muted">
-                                {formatPostedAgo(d.createdAt)}
-                              </span>
-                            </div>
-                            <p className="mt-2 text-sm leading-relaxed text-muted-2">{d.body}</p>
-                            <div className="mt-3 flex gap-3 text-xs text-muted">
-                              <span className="inline-flex items-center gap-1">
-                                <MessageCircle size={12} />
-                                Ответить
-                              </span>
-                            </div>
-                          </SideCard>
-                        ))
-                      )}
-                      <div className="flex flex-wrap justify-center gap-2 pt-2">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="!rounded-full !text-sm"
-                          onClick={() => setTab("bids")}
-                        >
-                          Смотреть ставки
-                        </Button>
-                        {variant === "cabinet" && !active.myBid && (
-                          <Button
-                            type="button"
-                            className="!rounded-full !text-sm"
-                            onClick={() => {
-                              setTab("about");
-                              setShowBidForm(true);
-                            }}
-                          >
-                            Сделать ставку
-                          </Button>
-                        )}
-                      </div>
-                    </div>
+                    <ProjectDiscussionTab
+                      projectId={active.project.id}
+                      discussions={active.discussions}
+                      variant={variant}
+                      replyToId={replyToId}
+                      setReplyToId={setReplyToId}
+                      onViewBids={() => setTab("bids")}
+                      onBid={() => {
+                        setTab("about");
+                        setShowBidForm(true);
+                      }}
+                      canBid={variant === "cabinet" && !active.myBid}
+                    />
                   )}
                 </div>
 
@@ -848,5 +828,200 @@ export function ProjectCatalogBoard({
         </div>
       )}
     </>
+  );
+}
+
+function ProjectDiscussionTab({
+  projectId,
+  discussions,
+  variant,
+  replyToId,
+  setReplyToId,
+  onViewBids,
+  onBid,
+  canBid,
+}: {
+  projectId: string;
+  discussions: ProjectDiscussion[];
+  variant: "public" | "cabinet";
+  replyToId: string | null;
+  setReplyToId: (id: string | null) => void;
+  onViewBids: () => void;
+  onBid: () => void;
+  canBid: boolean;
+}) {
+  const returnTo =
+    variant === "cabinet"
+      ? `/freelancer/projects?project=${encodeURIComponent(projectId)}`
+      : `/projects?project=${encodeURIComponent(projectId)}`;
+
+  const roots = discussions.filter((d) => !d.parentId);
+  const repliesOf = (id: string) => discussions.filter((d) => d.parentId === id);
+
+  function CommentCard({
+    d,
+    nested = false,
+  }: {
+    d: ProjectDiscussion;
+    nested?: boolean;
+  }) {
+    return (
+      <SideCard className={nested ? "ml-6 !bg-panel-soft/40 md:ml-10" : ""}>
+        <div className="flex items-start gap-3">
+          <UserAvatar name={d.author.name} url={d.author.avatarUrl} size={40} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div>
+                <span className="text-sm font-semibold text-text">{d.author.name}</span>
+                {d.author.title && (
+                  <span className="ml-2 text-xs text-muted">{d.author.title}</span>
+                )}
+              </div>
+              <span className="text-[11px] text-muted">{formatPostedAgo(d.createdAt)}</span>
+            </div>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted-2">
+              {d.body}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted">
+              {variant === "cabinet" ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 transition hover:text-accent"
+                  onClick={() => setReplyToId(replyToId === d.id ? null : d.id)}
+                >
+                  <MessageCircle size={12} />
+                  Ответить
+                </button>
+              ) : (
+                <ButtonLink
+                  href={`/login?next=${encodeURIComponent(returnTo)}`}
+                  variant="ghost"
+                  className="!inline-flex !h-auto !items-center !gap-1 !rounded-none !border-0 !p-0 !text-xs !text-muted hover:!text-accent"
+                >
+                  <MessageCircle size={12} />
+                  Ответить
+                </ButtonLink>
+              )}
+              {variant === "cabinet" ? (
+                <form action={thankProjectCommentAction} className="inline">
+                  <input type="hidden" name="commentId" value={d.id} />
+                  <input type="hidden" name="returnTo" value={returnTo} />
+                  <button
+                    type="submit"
+                    className={`inline-flex items-center gap-1 transition hover:text-accent ${
+                      d.thankedByMe ? "text-accent" : ""
+                    }`}
+                  >
+                    <ThumbsUp size={12} className={d.thankedByMe ? "fill-accent" : ""} />
+                    Поблагодарить
+                    {d.thanksCount > 0 ? ` · ${d.thanksCount}` : ""}
+                  </button>
+                </form>
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  <ThumbsUp size={12} />
+                  {d.thanksCount > 0 ? d.thanksCount : "0"}
+                </span>
+              )}
+            </div>
+            {variant === "cabinet" && replyToId === d.id && (
+              <form action={addProjectCommentAction} className="mt-3 space-y-2">
+                <input type="hidden" name="projectId" value={projectId} />
+                <input type="hidden" name="parentId" value={d.id} />
+                <input type="hidden" name="returnTo" value={returnTo} />
+                <Textarea
+                  name="body"
+                  required
+                  placeholder={`Ответ для ${d.author.name}…`}
+                  className="min-h-[72px]"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button type="submit" className="!rounded-full !text-sm">
+                    Отправить
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="!rounded-full !text-sm"
+                    onClick={() => setReplyToId(null)}
+                  >
+                    Отмена
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      </SideCard>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {roots.length === 0 ? (
+        <EmptyState
+          title="Пока тихо"
+          hint="Уточняющие вопросы появятся здесь — напишите первый комментарий"
+        />
+      ) : (
+        roots.map((root) => (
+          <div key={root.id} className="space-y-2">
+            <CommentCard d={root} />
+            {repliesOf(root.id).map((r) => (
+              <CommentCard key={r.id} d={r} nested />
+            ))}
+          </div>
+        ))
+      )}
+
+      {variant === "cabinet" ? (
+        <SideCard className="border-accent/30">
+          <h3 className="font-[family-name:var(--font-syne)] text-sm font-bold text-text">
+            Добавить комментарий
+          </h3>
+          <form action={addProjectCommentAction} className="mt-3 space-y-3">
+            <input type="hidden" name="projectId" value={projectId} />
+            <input type="hidden" name="returnTo" value={returnTo} />
+            <Textarea
+              name="body"
+              required
+              placeholder="Задайте уточняющий вопрос по проекту…"
+              className="min-h-[96px]"
+            />
+            <Button type="submit" className="!rounded-full shadow-[var(--df-glow)]">
+              <span className="inline-flex items-center gap-2">
+                <MessageCircle size={14} />
+                Добавить комментарий
+              </span>
+            </Button>
+          </form>
+        </SideCard>
+      ) : (
+        <div className="flex flex-wrap justify-center gap-2 pt-2">
+          <ButtonLink
+            href={`/login?next=${encodeURIComponent(returnTo)}`}
+            className="!rounded-full !text-sm"
+          >
+            Войти, чтобы комментировать
+          </ButtonLink>
+        </div>
+      )}
+
+      <div className="flex flex-wrap justify-center gap-2 pt-1">
+        <Button
+          type="button"
+          variant="ghost"
+          className="!rounded-full !text-sm"
+          onClick={onViewBids}
+        >
+          Смотреть ставки
+        </Button>
+        {canBid && (
+          <Button type="button" className="!rounded-full !text-sm" onClick={onBid}>
+            Сделать ставку
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }

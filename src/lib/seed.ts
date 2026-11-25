@@ -460,6 +460,7 @@ export const seedDb: DbShape = {
     },
   ],
   favorites: [],
+  projectComments: [],
   portfolio: [
     {
       id: "c-1",
@@ -628,6 +629,7 @@ export function emptySeedDb(): DbShape {
     reviews: [],
     portfolio: [],
     favorites: [],
+    projectComments: [],
     notifications: [],
     deposits: [],
     withdrawals: [],

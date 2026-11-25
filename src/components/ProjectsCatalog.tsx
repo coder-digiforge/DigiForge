@@ -119,33 +119,29 @@ export async function ProjectsCatalog({
           };
         });
 
-    // Лёгкие демо-обсуждения для живости вкладки
-    const discussions =
-      project.id === "p-1"
-        ? [
-            {
-              id: "d-1",
-              author: "Ольга",
-              body: "Нужна ли интеграция с CRM или достаточно формы бронирования на сайте?",
-              createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
-            },
-          ]
-        : project.id === "p-2"
-          ? [
-              {
-                id: "d-2",
-                author: "Максим",
-                body: "Каталог уже в JSON или нужна админка с первого этапа?",
-                createdAt: new Date(Date.now() - 1000 * 60 * 60 * 20).toISOString(),
-              },
-              {
-                id: "d-3",
-                author: "Анна",
-                body: "Админку можно вторым этапом — сначала бот и каталог.",
-                createdAt: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
-              },
-            ]
-          : [];
+    const discussions = (db.projectComments ?? [])
+      .filter((c) => c.projectId === project.id)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((c) => {
+        const author = db.users.find((u) => u.id === c.authorId);
+        return {
+          id: c.id,
+          parentId: c.parentId ?? null,
+          body: c.body,
+          createdAt: c.createdAt,
+          thanksCount: c.thanksCount ?? 0,
+          thankedByMe: Boolean(
+            viewerId && (c.thankedBy ?? []).includes(viewerId),
+          ),
+          author: {
+            id: author?.id ?? c.authorId,
+            name: author?.name ?? "Участник",
+            avatarUrl: author?.avatarUrl,
+            title: author?.title,
+            role: author?.role,
+          },
+        };
+      });
 
     const projectsCount = db.projects.filter((p) => p.clientId === project.clientId).length;
     const views = 80 + ((project.id.charCodeAt(project.id.length - 1) * 17) % 220);
