@@ -2,18 +2,26 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, Download, ExternalLink, Paperclip } from "lucide-react";
+import { ChevronLeft, Download, ExternalLink, Paperclip, Shield } from "lucide-react";
 import { MessageComposer } from "@/components/MessageComposer";
 import { useUnreadMessages } from "@/components/UnreadMessagesProvider";
 import { playNewMessageSound } from "@/lib/message-sound";
 import { EmptyState } from "@/components/ui";
-import type { Message, Thread } from "@/lib/types";
+import type { Deal, Message, Thread } from "@/lib/types";
 
 export type ThreadPreview = Thread & {
   peerName: string;
   lastBody?: string;
   unreadCount?: number;
+  dealStatus?: Deal["status"];
+  dealAmount?: number;
 };
+
+const SYSTEM_SENDER_ID = "system";
+
+function isSystemMessage(m: Message) {
+  return m.kind === "system" || m.senderId === SYSTEM_SENDER_ID;
+}
 
 function formatClock(iso: string) {
   return new Date(iso).toLocaleTimeString("ru-RU", {
@@ -136,8 +144,12 @@ export function MessagesPanel({
               m.createdAt > (messages[messages.length - 1]?.createdAt ?? "") &&
               m.senderId !== currentUserId,
           );
-          if (incoming.length > 0) {
+          const peerIncoming = incoming.filter((m) => !isSystemMessage(m));
+          if (peerIncoming.length > 0) {
             playNewMessageSound();
+            setFlashIds(new Set(peerIncoming.map((m) => m.id)));
+            window.setTimeout(() => setFlashIds(new Set()), 2400);
+          } else if (incoming.length > 0) {
             setFlashIds(new Set(incoming.map((m) => m.id)));
             window.setTimeout(() => setFlashIds(new Set()), 2400);
           }
@@ -307,6 +319,39 @@ export function MessagesPanel({
                 </div>
               </header>
 
+              {active.dealStatus === "pending_funding" && (
+                <div className="shrink-0 border-b border-[rgba(224,168,107,0.28)] bg-[color-mix(in_srgb,var(--accent)_10%,#1a1410)] px-4 py-2.5">
+                  <div className="mx-auto flex max-w-xl items-start gap-2.5">
+                    <Shield
+                      size={16}
+                      className="mt-0.5 shrink-0 text-accent"
+                      strokeWidth={2.25}
+                    />
+                    <div className="min-w-0 flex-1 text-[12.5px] leading-snug text-[#e8dcc8]">
+                      {basePath.includes("/client/") ? (
+                        <>
+                          Эскроу ещё не оплачен
+                          {active.dealAmount != null ? ` · ${active.dealAmount} USDT` : ""}.
+                          Исполнитель не должен начинать работу до пополнения сейфа.{" "}
+                          <Link
+                            href="/client/work"
+                            className="font-semibold text-accent underline-offset-2 hover:underline"
+                          >
+                            Оплатить эскроу
+                          </Link>
+                        </>
+                      ) : (
+                        <>
+                          Эскроу ещё не оплачен
+                          {active.dealAmount != null ? ` · ${active.dealAmount} USDT` : ""}. Не
+                          начинайте работу, пока заказчик не пополнит сейф.
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div
                 ref={scrollRef}
                 className="df-scroll-hide min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-4"
@@ -320,21 +365,62 @@ export function MessagesPanel({
                 )}
 
                 {messages.map((m, i) => {
-                  const mine = m.senderId === currentUserId;
+                  const system = isSystemMessage(m);
+                  const mine = !system && m.senderId === currentUserId;
                   const prev = messages[i - 1];
                   const next = messages[i + 1];
                   const showDay = !prev || !sameDay(prev.createdAt, m.createdAt);
+                  const prevSystem = prev ? isSystemMessage(prev) : false;
+                  const nextSystem = next ? isSystemMessage(next) : false;
                   const groupWithPrev =
+                    !system &&
+                    !prevSystem &&
                     prev &&
                     prev.senderId === m.senderId &&
                     sameDay(prev.createdAt, m.createdAt) &&
                     new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() < 120000;
                   const groupWithNext =
+                    !system &&
+                    !nextSystem &&
                     next &&
                     next.senderId === m.senderId &&
                     sameDay(next.createdAt, m.createdAt) &&
                     new Date(next.createdAt).getTime() - new Date(m.createdAt).getTime() < 120000;
                   const flash = flashIds.has(m.id);
+
+                  if (system) {
+                    return (
+                      <div key={m.id}>
+                        {showDay && (
+                          <div className="mb-3 mt-2 flex justify-center first:mt-0">
+                            <span className="rounded-full bg-panel-soft/80 px-3 py-1 text-[11px] font-medium text-muted">
+                              {formatDayLabel(m.createdAt)}
+                            </span>
+                          </div>
+                        )}
+                        <div className="my-3 flex justify-center px-1">
+                          <div
+                            className={`max-w-[min(94%,420px)] rounded-2xl border border-[rgba(224,168,107,0.3)] bg-[color-mix(in_srgb,var(--accent)_9%,rgba(28,20,16,0.92))] px-4 py-3 text-center shadow-[0_8px_28px_rgba(0,0,0,0.22)] transition ${
+                              flash
+                                ? "ring-2 ring-accent/70 shadow-[0_0_0_4px_color-mix(in_srgb,var(--accent)_22%,transparent)]"
+                                : ""
+                            }`}
+                          >
+                            <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
+                              <Shield size={11} strokeWidth={2.5} />
+                              DigiForge · эскроу
+                            </div>
+                            <div className="mt-1.5 text-[13px] font-medium leading-snug text-[#f0e4d0]">
+                              {m.body}
+                            </div>
+                            <div className="mt-1.5 text-[10px] text-muted">
+                              {formatClock(m.createdAt)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
 
                   const radius = mine
                     ? [

@@ -57,6 +57,7 @@ import type {
   ProjectAttachment,
   ProjectComment,
   Review,
+  SystemMessageCode,
   Thread,
   User,
   UserSettings,
@@ -65,6 +66,7 @@ import type {
 } from "./types";
 
 const STORE_ID = "main";
+export const SYSTEM_SENDER_ID = "system";
 
 function getSql() {
   const url = process.env.DATABASE_URL;
@@ -78,6 +80,34 @@ function getSql() {
 
 function newId(prefix: string) {
   return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function pushSystemMessageInDb(
+  db: DbShape,
+  threadId: string,
+  body: string,
+  systemCode: SystemMessageCode,
+  createdAt = new Date().toISOString(),
+): Message {
+  const thread = db.threads.find((t) => t.id === threadId);
+  if (!thread) throw new Error("Чат не найден");
+
+  const message: Message = {
+    id: newId("m"),
+    threadId,
+    senderId: SYSTEM_SENDER_ID,
+    body,
+    createdAt,
+    kind: "system",
+    systemCode,
+  };
+  db.messages.push(message);
+  thread.updatedAt = createdAt;
+  return message;
+}
+
+function formatUsdtAmount(amount: number) {
+  return `${normalizeUsdt(amount)} USDT`;
 }
 
 function depositAddress(network: CryptoNetwork) {
@@ -753,7 +783,12 @@ export async function requestWithdraw(input: {
   return withdrawal!;
 }
 
-function fundDealInDb(db: DbShape, dealId: string, clientId: string) {
+function fundDealInDb(
+  db: DbShape,
+  dealId: string,
+  clientId: string,
+  opts?: { skipChatNotice?: boolean },
+) {
   const deal = db.deals.find((d) => d.id === dealId);
   if (!deal) throw new Error("Сделка не найдена");
   if (deal.clientId !== clientId) throw new Error("Нет доступа");
@@ -800,6 +835,23 @@ function fundDealInDb(db: DbShape, dealId: string, clientId: string) {
     href: "/freelancer/work",
     createdAt: now,
   });
+
+  if (!opts?.skipChatNotice) {
+    const thread = db.threads.find((t) => t.dealId === deal.id);
+    if (thread) {
+      const notice = pushSystemMessageInDb(
+        db,
+        thread.id,
+        `Эскроу пополнен · ${formatUsdtAmount(deal.amount)} в сейфе · можно начинать работу`,
+        "escrow_funded",
+        now,
+      );
+      if (!thread.lastReadAt) thread.lastReadAt = {};
+      // Funder already knows — don't badge their own escrow notice.
+      thread.lastReadAt[clientId] = notice.createdAt;
+    }
+  }
+
   pushAudit(db, {
     actorUserId: clientId,
     action: "escrow.fund",
@@ -871,13 +923,15 @@ export async function acceptBid(
     project.status = "in_progress";
 
     d.deals.push(deal);
+    const threadId = newId("t");
+    const openedAt = now.toISOString();
     d.threads.push({
-      id: newId("t"),
+      id: threadId,
       dealId: deal.id,
       projectId,
       participantIds: [clientId, bid.freelancerId],
       title: project.title,
-      updatedAt: now.toISOString(),
+      updatedAt: openedAt,
     });
 
     pushAudit(d, {
@@ -889,8 +943,19 @@ export async function acceptBid(
     });
 
     const bal = calcBalances(d, clientId);
+    const thread = d.threads.find((t) => t.id === threadId)!;
+    if (!thread.lastReadAt) thread.lastReadAt = {};
+
     if (bal.available >= amount) {
-      fundDealInDb(d, deal.id, clientId);
+      const opened = pushSystemMessageInDb(
+        d,
+        threadId,
+        `Эскроу открыт и оплачен · ${formatUsdtAmount(amount)} в сейфе по «${project.title}»`,
+        "escrow_opened_funded",
+        openedAt,
+      );
+      thread.lastReadAt[clientId] = opened.createdAt;
+      fundDealInDb(d, deal.id, clientId, { skipChatNotice: true });
       d.notifications.push({
         id: newId("n"),
         userId: bid.freelancerId,
@@ -898,9 +963,24 @@ export async function acceptBid(
         body: `Эскроу ${amount} USDT открыт по «${project.title}»`,
         read: false,
         href: "/freelancer/work",
-        createdAt: now.toISOString(),
+        createdAt: openedAt,
       });
     } else {
+      pushSystemMessageInDb(
+        d,
+        threadId,
+        `Эскроу открыт · ${formatUsdtAmount(amount)} по «${project.title}»`,
+        "escrow_opened",
+        openedAt,
+      );
+      const awaiting = pushSystemMessageInDb(
+        d,
+        threadId,
+        "Ожидается оплата заказчиком · не приступайте к работе, пока средства не в сейфе",
+        "escrow_awaiting_payment",
+        new Date(now.getTime() + 1).toISOString(),
+      );
+      thread.lastReadAt[clientId] = awaiting.createdAt;
       d.notifications.push({
         id: newId("n"),
         userId: clientId,
@@ -908,7 +988,7 @@ export async function acceptBid(
         body: `Примите оплату ${amount} USDT для «${project.title}»`,
         read: false,
         href: "/client/work",
-        createdAt: now.toISOString(),
+        createdAt: openedAt,
       });
       d.notifications.push({
         id: newId("n"),
@@ -917,7 +997,7 @@ export async function acceptBid(
         body: `Ожидаем пополнение эскроу по «${project.title}»`,
         read: false,
         href: "/freelancer/work",
-        createdAt: now.toISOString(),
+        createdAt: openedAt,
       });
     }
 
@@ -1337,12 +1417,13 @@ export async function sendMessage(
   attachment?: Message["attachment"],
 ) {
   const message: Message = {
-    id: `m-${crypto.randomUUID().slice(0, 8)}`,
+    id: newId("m"),
     threadId,
     senderId,
     body,
     attachment,
     createdAt: new Date().toISOString(),
+    kind: "user",
   };
   await updateDb((db) => {
     const thread = db.threads.find((t) => t.id === threadId);
@@ -1354,6 +1435,35 @@ export async function sendMessage(
     thread.updatedAt = message.createdAt;
     // Sender has read up to this message; peer gets unread badge in Messages UI.
     thread.lastReadAt[senderId] = message.createdAt;
+
+    // Client wrote while escrow is still unpaid — remind both sides not to start work.
+    if (thread.dealId) {
+      const deal = db.deals.find((d) => d.id === thread.dealId);
+      if (
+        deal &&
+        deal.status === "pending_funding" &&
+        senderId === deal.clientId
+      ) {
+        const recentHold = db.messages.some(
+          (m) =>
+            m.threadId === threadId &&
+            m.kind === "system" &&
+            m.systemCode === "work_hold_until_funded" &&
+            new Date(message.createdAt).getTime() - new Date(m.createdAt).getTime() <
+              30 * 60_000,
+        );
+        if (!recentHold) {
+          const hold = pushSystemMessageInDb(
+            db,
+            threadId,
+            "Заказчик написал до оплаты эскроу · не начинайте работу, пока средства не в сейфе",
+            "work_hold_until_funded",
+            new Date(new Date(message.createdAt).getTime() + 1).toISOString(),
+          );
+          thread.lastReadAt[senderId] = hold.createdAt;
+        }
+      }
+    }
   });
   return message;
 }

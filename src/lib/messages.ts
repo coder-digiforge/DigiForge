@@ -1,6 +1,16 @@
 import { getDb, getMessages, getThreadsForUser, countUnreadInThread } from "./store";
 import type { ThreadPreview } from "@/components/MessagesPanel";
 
+function previewBody(last: Awaited<ReturnType<typeof getMessages>>[number] | undefined) {
+  if (!last) return undefined;
+  if (last.kind === "system") {
+    return last.body;
+  }
+  if (last.body) return last.body;
+  if (last.attachment) return `📎 ${last.attachment.name}`;
+  return undefined;
+}
+
 export async function getThreadPreviews(userId: string): Promise<ThreadPreview[]> {
   const threads = await getThreadsForUser(userId);
   const db = await getDb();
@@ -12,11 +22,14 @@ export async function getThreadPreviews(userId: string): Promise<ThreadPreview[]
       const msgs = await getMessages(t.id);
       const last = msgs[msgs.length - 1];
       const unreadCount = countUnreadInThread(db, t.id, userId);
+      const deal = t.dealId ? db.deals.find((d) => d.id === t.dealId) : undefined;
       return {
         ...t,
         peerName: peer?.name ?? "Собеседник",
-        lastBody: last?.body || (last?.attachment ? `📎 ${last.attachment.name}` : undefined),
+        lastBody: previewBody(last),
         unreadCount,
+        dealStatus: deal?.status,
+        dealAmount: deal?.amount,
       } satisfies ThreadPreview;
     }),
   );

@@ -239,13 +239,26 @@ export interface MessageAttachment {
   size?: number;
 }
 
+export type MessageKind = "user" | "system";
+
+/** Stable codes for escrow / deal lifecycle notices in chat. */
+export type SystemMessageCode =
+  | "escrow_opened"
+  | "escrow_opened_funded"
+  | "escrow_awaiting_payment"
+  | "escrow_funded"
+  | "work_hold_until_funded";
+
 export interface Message {
   id: string;
   threadId: string;
+  /** `"system"` for DigiForge notices; otherwise a user id. */
   senderId: string;
   body: string;
   attachment?: MessageAttachment;
   createdAt: string;
+  kind?: MessageKind;
+  systemCode?: SystemMessageCode;
 }
 
 export interface Thread {
