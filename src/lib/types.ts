@@ -255,6 +255,8 @@ export interface Thread {
   participantIds: string[];
   title: string;
   updatedAt: string;
+  /** Per-user last-read timestamp — unread lives in chats, not the bell. */
+  lastReadAt?: Record<string, string>;
 }
 
 export interface Review {

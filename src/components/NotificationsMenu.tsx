@@ -112,7 +112,9 @@ export function NotificationsMenu({ items }: { items: NotificationPreview[] }) {
       >
         <Bell size={16} />
         {unreadCount > 0 && (
-          <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-accent" />
+          <span className="absolute -right-1 -top-1 grid h-[17px] min-w-[17px] place-items-center rounded-full bg-accent px-1 text-[10px] font-bold leading-none text-[#1a120c]">
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
         )}
       </button>
 

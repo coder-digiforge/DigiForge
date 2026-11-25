@@ -2,16 +2,24 @@
 
 import { useRef, useState } from "react";
 import { Paperclip, SendHorizonal, X } from "lucide-react";
-import { sendMessageAction } from "@/app/actions/marketplace";
+import { useUnreadMessages } from "@/components/UnreadMessagesProvider";
 
 const MAX_FILE_MB = 12;
 
-export function MessageComposer({ threadId }: { threadId: string }) {
+export function MessageComposer({
+  threadId,
+  onSent,
+}: {
+  threadId: string;
+  onSent?: () => void;
+}) {
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [hasText, setHasText] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const { refresh } = useUnreadMessages();
 
   function clearFile() {
     setFileName(null);
@@ -20,19 +28,37 @@ export function MessageComposer({ threadId }: { threadId: string }) {
 
   const canSend = hasText || Boolean(fileName);
 
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (pending || !canSend) return;
+    setError(null);
+    setPending(true);
+    try {
+      const form = e.currentTarget;
+      const data = new FormData(form);
+      const res = await fetch("/api/messages/send", { method: "POST", body: data });
+      const json = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "Не удалось отправить");
+      }
+      setHasText(false);
+      clearFile();
+      if (inputRef.current) inputRef.current.value = "";
+      onSent?.();
+      void refresh();
+      window.dispatchEvent(new CustomEvent("df:messages-changed", { detail: { threadId } }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка отправки");
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <form
-      action={sendMessageAction}
+      onSubmit={onSubmit}
       encType="multipart/form-data"
       className="border-t border-border/60 bg-[color-mix(in_srgb,var(--panel)_92%,transparent)] px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-md"
-      onSubmit={() => {
-        setError(null);
-        setHasText(false);
-        setTimeout(() => {
-          clearFile();
-          if (inputRef.current) inputRef.current.value = "";
-        }, 0);
-      }}
     >
       <input type="hidden" name="threadId" value={threadId} />
 
@@ -84,31 +110,24 @@ export function MessageComposer({ threadId }: { threadId: string }) {
             setFileName(file.name);
           }}
         />
-
-        <div className="min-w-0 flex-1 rounded-[22px] border border-border bg-[#16110e] px-3.5 py-2">
-          <input
-            ref={inputRef}
-            name="body"
-            placeholder="Сообщение"
-            autoComplete="off"
-            enterKeyHint="send"
-            className="df-imessage-input w-full bg-transparent text-[16px] leading-5 text-text outline-none placeholder:text-muted"
-            style={{ color: "var(--text)", WebkitTextFillColor: "var(--text)", caretColor: "var(--accent)" }}
-            onChange={(e) => setHasText(e.target.value.trim().length > 0)}
-          />
-        </div>
-
+        <input
+          ref={inputRef}
+          name="body"
+          type="text"
+          autoComplete="off"
+          enterKeyHint="send"
+          placeholder="Сообщение"
+          className="min-h-10 min-w-0 flex-1 rounded-full border border-border bg-panel-soft px-4 py-2.5 text-[15px] text-text outline-none placeholder:text-muted focus:border-accent/50"
+          onChange={(e) => setHasText(e.target.value.trim().length > 0)}
+          disabled={pending}
+        />
         <button
           type="submit"
-          disabled={!canSend}
+          disabled={!canSend || pending}
+          className="mb-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent text-[#1a120c] transition enabled:active:scale-95 disabled:opacity-40"
           aria-label="Отправить"
-          className={`mb-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full transition active:scale-95 ${
-            canSend
-              ? "bg-[#0a84ff] text-white shadow-[0_0_16px_rgba(10,132,255,0.35)]"
-              : "bg-panel-soft text-muted"
-          }`}
         >
-          <SendHorizonal size={16} strokeWidth={2.25} />
+          <SendHorizonal size={18} strokeWidth={2.25} />
         </button>
       </div>
     </form>

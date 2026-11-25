@@ -3,8 +3,9 @@ import { FreelancerMobileNav } from "@/components/CabinetMobileNav";
 import { FreelancerSidebar } from "@/components/Sidebar";
 import type { TaskPreview } from "@/components/TasksMenu";
 import { ThemeShell } from "@/components/ThemeShell";
+import { UnreadMessagesProvider } from "@/components/UnreadMessagesProvider";
 import { requireUser } from "@/lib/auth";
-import { getDb, listDealsForUser, listNotifications } from "@/lib/store";
+import { getDb, getUnreadMessageSummary, listDealsForUser, listNotifications } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +23,11 @@ export default async function FreelancerLayout({ children }: { children: React.R
   const deals = (await listDealsForUser(user.id)).filter(
     (d) => d.freelancerId === user.id && ACTIVE.has(d.status),
   );
-  const db = await getDb();
-  const notifications = (await listNotifications(user.id)).slice(0, 12);
+  const [db, notifications, unread] = await Promise.all([
+    getDb(),
+    listNotifications(user.id).then((n) => n.slice(0, 12)),
+    getUnreadMessageSummary(user.id),
+  ]);
 
   const tasks: TaskPreview[] = deals.map((d) => {
     const project = db.projects.find((p) => p.id === d.projectId);
@@ -37,18 +41,20 @@ export default async function FreelancerLayout({ children }: { children: React.R
   });
 
   return (
-    <ThemeShell className="flex min-h-dvh flex-col bg-bg-deep text-text">
-      <AppHeader
-        user={user}
-        variant="freelancer"
-        tasks={tasks}
-        notifications={notifications}
-      />
-      <div className="mx-auto flex w-full max-w-[1440px] min-h-0 flex-1 flex-col gap-6 px-4 py-4 pb-24 sm:px-6 sm:py-6 lg:flex-row lg:px-10 lg:pb-6">
-        <FreelancerSidebar />
-        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden">{children}</div>
-      </div>
-      <FreelancerMobileNav />
-    </ThemeShell>
+    <UnreadMessagesProvider initialTotal={unread.total} initialByThread={unread.byThread}>
+      <ThemeShell className="flex min-h-dvh flex-col bg-bg-deep text-text">
+        <AppHeader
+          user={user}
+          variant="freelancer"
+          tasks={tasks}
+          notifications={notifications}
+        />
+        <div className="mx-auto flex w-full max-w-[1440px] min-h-0 flex-1 flex-col gap-6 px-4 py-4 pb-24 sm:px-6 sm:py-6 lg:flex-row lg:px-10 lg:pb-6">
+          <FreelancerSidebar />
+          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden">{children}</div>
+        </div>
+        <FreelancerMobileNav />
+      </ThemeShell>
+    </UnreadMessagesProvider>
   );
 }

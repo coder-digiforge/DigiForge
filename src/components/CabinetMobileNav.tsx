@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { whatsNewFreshCount } from "@/lib/whats-new";
+import { useUnreadMessages } from "@/components/UnreadMessagesProvider";
 
 type NavItem = {
   href: string;
@@ -162,11 +163,18 @@ function BottomNav({
               <li key={tab.href} className="min-w-0">
                 <Link
                   href={tab.href}
-                  className={`flex h-full flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-medium ${
+                  className={`relative flex h-full flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-medium ${
                     active ? "text-accent" : "text-muted"
                   }`}
                 >
-                  <TabIcon active={active}>{tab.icon}</TabIcon>
+                  <span className="relative inline-flex">
+                    <TabIcon active={active}>{tab.icon}</TabIcon>
+                    {tab.badge != null && tab.badge > 0 && (
+                      <span className="absolute -right-2.5 -top-1.5 grid h-[15px] min-w-[15px] place-items-center rounded-full bg-accent px-1 text-[9px] font-bold leading-none text-[#1a120c]">
+                        {tab.badge > 99 ? "99+" : tab.badge}
+                      </span>
+                    )}
+                  </span>
                   <span className="max-w-full truncate">{tab.label}</span>
                 </Link>
               </li>
@@ -198,6 +206,7 @@ function BottomNav({
 
 export function FreelancerMobileNav() {
   const fresh = whatsNewFreshCount();
+  const { unreadTotal } = useUnreadMessages();
   const roots = ["/freelancer"];
   const groups: NavGroup[] = [
     {
@@ -205,7 +214,12 @@ export function FreelancerMobileNav() {
       items: [
         { href: "/freelancer", label: "Кабинет", icon: <LayoutDashboard size={16} /> },
         { href: "/freelancer/projects", label: "Найти проект", icon: <Search size={16} /> },
-        { href: "/freelancer/messages", label: "Переписки", icon: <MessageSquare size={16} /> },
+        {
+          href: "/freelancer/messages",
+          label: "Переписки",
+          icon: <MessageSquare size={16} />,
+          badge: unreadTotal,
+        },
         { href: "/freelancer/bids", label: "Ставки", icon: <Gavel size={16} /> },
         { href: "/freelancer/favorites", label: "Избранное", icon: <Bookmark size={16} /> },
         { href: "/freelancer/finance", label: "Финансы", icon: <Wallet size={16} /> },
@@ -240,7 +254,12 @@ export function FreelancerMobileNav() {
   const tabs: NavItem[] = [
     { href: "/freelancer", label: "Кабинет", icon: <LayoutDashboard size={18} /> },
     { href: "/freelancer/projects", label: "Проекты", icon: <Search size={18} /> },
-    { href: "/freelancer/messages", label: "Чаты", icon: <MessageSquare size={18} /> },
+    {
+      href: "/freelancer/messages",
+      label: "Чаты",
+      icon: <MessageSquare size={18} />,
+      badge: unreadTotal,
+    },
     { href: "/freelancer/finance", label: "Финансы", icon: <Wallet size={18} /> },
   ];
 
@@ -249,13 +268,19 @@ export function FreelancerMobileNav() {
 
 export function ClientMobileNav() {
   const fresh = whatsNewFreshCount();
+  const { unreadTotal } = useUnreadMessages();
   const roots = ["/client"];
   const groups: NavGroup[] = [
     {
       title: "Рабочая среда",
       items: [
         { href: "/client", label: "Обзор", icon: <LayoutDashboard size={16} /> },
-        { href: "/client/messages", label: "Переписки", icon: <MessageSquare size={16} /> },
+        {
+          href: "/client/messages",
+          label: "Переписки",
+          icon: <MessageSquare size={16} />,
+          badge: unreadTotal,
+        },
         { href: "/client/work", label: "В работе", icon: <Briefcase size={16} /> },
         { href: "/client/projects", label: "Мои проекты", icon: <FolderKanban size={16} /> },
         { href: "/client/freelancers", label: "Исполнители", icon: <Users size={16} /> },
@@ -290,7 +315,12 @@ export function ClientMobileNav() {
   const tabs: NavItem[] = [
     { href: "/client", label: "Обзор", icon: <LayoutDashboard size={18} /> },
     { href: "/client/projects", label: "Проекты", icon: <FolderKanban size={18} /> },
-    { href: "/client/messages", label: "Чаты", icon: <MessageSquare size={18} /> },
+    {
+      href: "/client/messages",
+      label: "Чаты",
+      icon: <MessageSquare size={18} />,
+      badge: unreadTotal,
+    },
     { href: "/client/finance", label: "Финансы", icon: <Wallet size={18} /> },
   ];
 

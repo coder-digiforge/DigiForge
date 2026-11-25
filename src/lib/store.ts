@@ -1349,29 +1349,61 @@ export async function sendMessage(
     if (!thread || !thread.participantIds.includes(senderId)) {
       throw new Error("Нет доступа к чату");
     }
+    if (!thread.lastReadAt) thread.lastReadAt = {};
     db.messages.push(message);
     thread.updatedAt = message.createdAt;
-    const preview = body || (attachment ? `Файл: ${attachment.name}` : "");
-    for (const pid of thread.participantIds) {
-      if (pid === senderId) continue;
-      db.notifications.push({
-        id: `n-${crypto.randomUUID().slice(0, 8)}`,
-        userId: pid,
-        title: "Новое сообщение",
-        body: preview.slice(0, 80),
-        read: false,
-        href: undefined,
-        createdAt: message.createdAt,
-      });
-    }
+    // Sender has read up to this message; peer gets unread badge in Messages UI.
+    thread.lastReadAt[senderId] = message.createdAt;
   });
   return message;
+}
+
+export async function markThreadRead(userId: string, threadId: string) {
+  await updateDb((db) => {
+    const thread = db.threads.find((t) => t.id === threadId);
+    if (!thread || !thread.participantIds.includes(userId)) {
+      throw new Error("Нет доступа к чату");
+    }
+    if (!thread.lastReadAt) thread.lastReadAt = {};
+    thread.lastReadAt[userId] = new Date().toISOString();
+  });
+}
+
+export function countUnreadInThread(
+  db: DbShape,
+  threadId: string,
+  userId: string,
+): number {
+  const thread = db.threads.find((t) => t.id === threadId);
+  if (!thread || !thread.participantIds.includes(userId)) return 0;
+  const lastRead = thread.lastReadAt?.[userId] ?? "";
+  return db.messages.filter(
+    (m) =>
+      m.threadId === threadId &&
+      m.senderId !== userId &&
+      m.createdAt > lastRead,
+  ).length;
+}
+
+export async function getUnreadMessageSummary(userId: string) {
+  const db = await readDb();
+  const byThread: Record<string, number> = {};
+  let total = 0;
+  for (const thread of db.threads) {
+    if (!thread.participantIds.includes(userId)) continue;
+    const count = countUnreadInThread(db, thread.id, userId);
+    if (count > 0) {
+      byThread[thread.id] = count;
+      total += count;
+    }
+  }
+  return { total, byThread };
 }
 
 export async function listNotifications(userId: string) {
   const db = await readDb();
   return db.notifications
-    .filter((n) => n.userId === userId)
+    .filter((n) => n.userId === userId && n.title !== "Новое сообщение")
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 

@@ -47,5 +47,18 @@ export function ensureFinanceShape(db: DbShape): DbShape {
     }
   }
 
+  if (!Array.isArray(db.threads)) db.threads = [];
+  if (!Array.isArray(db.messages)) db.messages = [];
+  if (!Array.isArray(db.notifications)) db.notifications = [];
+
+  for (const thread of db.threads) {
+    if (!thread.lastReadAt || typeof thread.lastReadAt !== "object") {
+      thread.lastReadAt = {};
+    }
+  }
+
+  // Chat belongs in Messages UI — drop legacy "new message" bell spam.
+  db.notifications = db.notifications.filter((n) => n.title !== "Новое сообщение");
+
   return db;
 }

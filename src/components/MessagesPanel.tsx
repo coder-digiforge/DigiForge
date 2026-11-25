@@ -1,12 +1,18 @@
+"use client";
+
 import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, Download, ExternalLink, Paperclip } from "lucide-react";
 import { MessageComposer } from "@/components/MessageComposer";
+import { useUnreadMessages } from "@/components/UnreadMessagesProvider";
+import { playNewMessageSound } from "@/lib/message-sound";
 import { EmptyState } from "@/components/ui";
 import type { Message, Thread } from "@/lib/types";
 
 export type ThreadPreview = Thread & {
   peerName: string;
   lastBody?: string;
+  unreadCount?: number;
 };
 
 function formatClock(iso: string) {
@@ -74,10 +80,19 @@ function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg"
   );
 }
 
+function UnreadPill({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="grid h-[20px] min-w-[20px] shrink-0 place-items-center rounded-full bg-accent px-1.5 text-[11px] font-bold text-[#1a120c]">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
 export function MessagesPanel({
-  threads,
-  active,
-  messages,
+  threads: initialThreads,
+  active: initialActive,
+  messages: initialMessages,
   basePath,
   currentUserId,
   title = "Сообщения",
@@ -90,6 +105,82 @@ export function MessagesPanel({
   title?: string;
   subtitle?: string;
 }) {
+  const [threads, setThreads] = useState(initialThreads);
+  const [messages, setMessages] = useState(initialMessages);
+  const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
+  const activeId = initialActive?.id ?? null;
+  const active = threads.find((t) => t.id === activeId) ?? initialActive ?? null;
+  const lastMsgId = useRef(initialMessages[initialMessages.length - 1]?.id ?? "");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const { refresh } = useUnreadMessages();
+
+  const sync = useCallback(async () => {
+    const qs = activeId
+      ? `?threadId=${encodeURIComponent(activeId)}&markRead=1`
+      : "";
+    try {
+      const res = await fetch(`/api/messages/live${qs}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        threads?: ThreadPreview[];
+        messages?: Message[];
+        threadId?: string | null;
+      };
+      if (data.threads) setThreads(data.threads);
+      if (activeId && data.threadId === activeId && data.messages) {
+        const next = data.messages;
+        const newest = next[next.length - 1];
+        if (newest && newest.id !== lastMsgId.current) {
+          const incoming = next.filter(
+            (m) =>
+              m.createdAt > (messages[messages.length - 1]?.createdAt ?? "") &&
+              m.senderId !== currentUserId,
+          );
+          if (incoming.length > 0) {
+            playNewMessageSound();
+            setFlashIds(new Set(incoming.map((m) => m.id)));
+            window.setTimeout(() => setFlashIds(new Set()), 2400);
+          }
+          lastMsgId.current = newest.id;
+        }
+        setMessages(next);
+      }
+      void refresh();
+    } catch {
+      // ignore
+    }
+  }, [activeId, currentUserId, messages, refresh]);
+
+  useEffect(() => {
+    setThreads(initialThreads);
+  }, [initialThreads]);
+
+  useEffect(() => {
+    setMessages(initialMessages);
+    lastMsgId.current = initialMessages[initialMessages.length - 1]?.id ?? "";
+  }, [initialMessages, activeId]);
+
+  useEffect(() => {
+    void sync();
+    const id = window.setInterval(() => {
+      void sync();
+    }, 2500);
+    const onChanged = () => {
+      void sync();
+    };
+    window.addEventListener("df:messages-changed", onChanged);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("df:messages-changed", onChanged);
+    };
+  }, [sync]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length, activeId]);
+
   return (
     <div
       className={
@@ -99,7 +190,6 @@ export function MessagesPanel({
       }
     >
       <div className="grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[320px_1fr]">
-        {/* Inbox */}
         <aside
           className={`min-h-0 flex-col bg-panel ${active ? "hidden lg:flex" : "flex"}`}
         >
@@ -126,18 +216,32 @@ export function MessagesPanel({
             <ul>
               {threads.map((t, index) => {
                 const selected = active?.id === t.id;
+                const unread = t.unreadCount ?? 0;
                 return (
                   <li key={t.id}>
                     <Link
                       href={`${basePath}/${t.id}`}
                       className={`flex items-center gap-3 px-4 py-3.5 transition active:bg-panel-soft sm:px-5 ${
-                        selected ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]" : ""
+                        selected
+                          ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]"
+                          : unread > 0
+                            ? "bg-[color-mix(in_srgb,var(--accent)_7%,transparent)]"
+                            : ""
                       } ${index !== threads.length - 1 ? "border-b border-border/35" : ""}`}
                     >
-                      <Avatar name={t.peerName} />
+                      <div className="relative">
+                        <Avatar name={t.peerName} />
+                        {unread > 0 && (
+                          <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-panel" />
+                        )}
+                      </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline justify-between gap-2">
-                          <span className="truncate text-[16px] font-semibold text-text">
+                          <span
+                            className={`truncate text-[16px] ${
+                              unread > 0 ? "font-bold text-[#f5e6c8]" : "font-semibold text-text"
+                            }`}
+                          >
                             {t.peerName}
                           </span>
                           <span className="shrink-0 text-[12px] text-muted">
@@ -145,9 +249,18 @@ export function MessagesPanel({
                           </span>
                         </div>
                         <div className="mt-0.5 truncate text-[13px] text-muted">{t.title}</div>
-                        {t.lastBody && (
-                          <div className="mt-0.5 truncate text-[14px] text-muted-2">{t.lastBody}</div>
-                        )}
+                        <div className="mt-0.5 flex items-center gap-2">
+                          {t.lastBody && (
+                            <div
+                              className={`min-w-0 flex-1 truncate text-[14px] ${
+                                unread > 0 ? "font-medium text-text" : "text-muted-2"
+                              }`}
+                            >
+                              {t.lastBody}
+                            </div>
+                          )}
+                          <UnreadPill count={unread} />
+                        </div>
                       </div>
                     </Link>
                   </li>
@@ -157,7 +270,6 @@ export function MessagesPanel({
           </div>
         </aside>
 
-        {/* Thread */}
         <section
           className={`min-h-0 flex-col bg-[#120e0a] ${active ? "flex" : "hidden lg:flex"}`}
         >
@@ -195,7 +307,10 @@ export function MessagesPanel({
                 </div>
               </header>
 
-              <div className="df-scroll-hide min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-4">
+              <div
+                ref={scrollRef}
+                className="df-scroll-hide min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5 sm:py-4"
+              >
                 {messages.length === 0 && (
                   <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
                     <Avatar name={active.peerName} size="lg" />
@@ -219,6 +334,7 @@ export function MessagesPanel({
                     next.senderId === m.senderId &&
                     sameDay(next.createdAt, m.createdAt) &&
                     new Date(next.createdAt).getTime() - new Date(m.createdAt).getTime() < 120000;
+                  const flash = flashIds.has(m.id);
 
                   const radius = mine
                     ? [
@@ -247,8 +363,12 @@ export function MessagesPanel({
                         }`}
                       >
                         <div
-                          className={`max-w-[min(85%,340px)] overflow-hidden px-3.5 py-2 text-[15px] leading-[1.35] sm:max-w-[65%] ${radius} ${
+                          className={`max-w-[min(85%,340px)] overflow-hidden px-3.5 py-2 text-[15px] leading-[1.35] transition sm:max-w-[65%] ${radius} ${
                             mine ? "bg-[#0a84ff] text-white" : "bg-[#2c2c2e] text-[#f5f5f7]"
+                          } ${
+                            flash
+                              ? "ring-2 ring-accent shadow-[0_0_0_4px_color-mix(in_srgb,var(--accent)_28%,transparent)]"
+                              : ""
                           }`}
                         >
                           {m.body ? (
@@ -319,7 +439,7 @@ export function MessagesPanel({
               </div>
 
               <div className="shrink-0">
-                <MessageComposer threadId={active.id} />
+                <MessageComposer threadId={active.id} onSent={() => void sync()} />
               </div>
             </>
           )}

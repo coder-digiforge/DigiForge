@@ -1,7 +1,7 @@
 import { MessagesPanel } from "@/components/MessagesPanel";
 import { requireUser } from "@/lib/auth";
 import { getThreadPreviews } from "@/lib/messages";
-import { getMessages } from "@/lib/store";
+import { getMessages, markThreadRead } from "@/lib/store";
 import { notFound } from "next/navigation";
 
 export default async function ClientThreadPage({
@@ -11,6 +11,7 @@ export default async function ClientThreadPage({
 }) {
   const user = await requireUser(["client"]);
   const { id } = await params;
+  await markThreadRead(user.id, id).catch(() => undefined);
   const threads = await getThreadPreviews(user.id);
   const active = threads.find((t) => t.id === id);
   if (!active) notFound();

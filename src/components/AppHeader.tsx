@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { MessageSquare, Plus } from "lucide-react";
 import type { SessionUser } from "@/lib/auth";
@@ -6,8 +8,18 @@ import {
   type NotificationPreview,
 } from "./NotificationsMenu";
 import { ProfileMenu } from "./ProfileMenu";
+import { useUnreadMessages } from "./UnreadMessagesProvider";
 import { ButtonLink, Logo } from "./ui";
 import { TasksMenu, type TaskPreview } from "./TasksMenu";
+
+function CountBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="absolute -right-1 -top-1 grid h-[17px] min-w-[17px] place-items-center rounded-full bg-accent px-1 text-[10px] font-bold leading-none text-[#1a120c]">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
 
 export function AppHeader({
   user,
@@ -23,6 +35,7 @@ export function AppHeader({
   const homeHref = variant === "client" ? "/client" : "/freelancer";
   const messagesHref = variant === "client" ? "/client/messages" : "/freelancer/messages";
   const findHref = variant === "client" ? "/client/freelancers" : "/freelancer/projects";
+  const { unreadTotal } = useUnreadMessages();
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-[color-mix(in_srgb,var(--panel)_95%,transparent)] backdrop-blur">
@@ -73,10 +86,11 @@ export function AppHeader({
           )}
           <Link
             href={messagesHref}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted transition hover:border-accent/40 hover:text-accent"
-            aria-label="Сообщения"
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted transition hover:border-accent/40 hover:text-accent"
+            aria-label={unreadTotal > 0 ? `Сообщения, ${unreadTotal} новых` : "Сообщения"}
           >
             <MessageSquare size={16} />
+            <CountBadge count={unreadTotal} />
           </Link>
           <NotificationsMenu items={notifications} />
           <ProfileMenu user={user} variant={variant} />

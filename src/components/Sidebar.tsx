@@ -24,6 +24,7 @@ import {
   MessageCircle,
 } from "lucide-react";
 import { whatsNewFreshCount } from "@/lib/whats-new";
+import { useUnreadMessages } from "@/components/UnreadMessagesProvider";
 
 type Item = { href: string; label: string; icon: ReactNode; badge?: number };
 
@@ -67,13 +68,19 @@ function NavGroup({ title, items }: { title: string; items: Item[] }) {
 
 export function ClientSidebar() {
   const fresh = whatsNewFreshCount();
+  const { unreadTotal } = useUnreadMessages();
   return (
     <aside className="df-panel !hidden h-fit w-full shrink-0 p-3 lg:!block lg:w-60">
       <NavGroup
         title="Рабочая среда"
         items={[
           { href: "/client", label: "Обзор", icon: <LayoutDashboard size={16} /> },
-          { href: "/client/messages", label: "Переписки", icon: <MessageSquare size={16} /> },
+          {
+            href: "/client/messages",
+            label: "Переписки",
+            icon: <MessageSquare size={16} />,
+            badge: unreadTotal,
+          },
           { href: "/client/work", label: "В работе", icon: <Briefcase size={16} /> },
           { href: "/client/projects", label: "Мои проекты", icon: <FolderKanban size={16} /> },
           { href: "/client/freelancers", label: "Исполнители", icon: <Users size={16} /> },
@@ -110,6 +117,7 @@ export function ClientSidebar() {
 export function FreelancerSidebar() {
   const pathname = usePathname();
   const fresh = whatsNewFreshCount();
+  const { unreadTotal } = useUnreadMessages();
   // На «Найти проект» место сайдбара занимает панель подбора
   if (pathname.startsWith("/freelancer/projects")) return null;
 
@@ -120,7 +128,12 @@ export function FreelancerSidebar() {
         items={[
           { href: "/freelancer", label: "Кабинет", icon: <LayoutDashboard size={16} /> },
           { href: "/freelancer/projects", label: "Найти проект", icon: <Search size={16} /> },
-          { href: "/freelancer/messages", label: "Переписки", icon: <MessageSquare size={16} /> },
+          {
+            href: "/freelancer/messages",
+            label: "Переписки",
+            icon: <MessageSquare size={16} />,
+            badge: unreadTotal,
+          },
           { href: "/freelancer/bids", label: "Ставки", icon: <Gavel size={16} /> },
           { href: "/freelancer/favorites", label: "Избранное", icon: <Bookmark size={16} /> },
           { href: "/freelancer/finance", label: "Финансы", icon: <Wallet size={16} /> },
