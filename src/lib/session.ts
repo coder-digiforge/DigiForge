@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHash, createHmac, timingSafeEqual } from "crypto";
 
 const COOKIE = "df_session";
 
@@ -9,8 +9,18 @@ function configuredSecret() {
 }
 
 function secret() {
-  const s = configuredSecret();
-  if (s) return s;
+  const configured = configuredSecret();
+  if (configured) return configured;
+
+  const db = process.env.DATABASE_URL?.trim();
+  if (db) {
+    // Temporary fallback so login works before the env var is set on Vercel.
+    console.error(
+      "[session] NEON_AUTH_COOKIE_SECRET missing — using derived secret from DATABASE_URL. Set NEON_AUTH_COOKIE_SECRET in Vercel.",
+    );
+    return createHash("sha256").update(`digiforge-session:${db}`).digest("hex");
+  }
+
   if (process.env.NODE_ENV === "production") {
     throw new Error("NEON_AUTH_COOKIE_SECRET is required in production");
   }
@@ -46,11 +56,14 @@ export function createSessionToken(userId: string, sessionVersion: number): stri
 
 export function parseSessionToken(token: string | undefined | null): SessionPayload | null {
   if (!token || !token.includes(".")) return null;
-  // Missing prod secret must not 500 public pages — treat as logged out.
-  if (!configuredSecret() && process.env.NODE_ENV === "production") return null;
   const [body, sig] = token.split(".");
   if (!body || !sig) return null;
-  const expected = sign(body);
+  let expected: string;
+  try {
+    expected = sign(body);
+  } catch {
+    return null;
+  }
   try {
     const a = Buffer.from(sig);
     const b = Buffer.from(expected);
