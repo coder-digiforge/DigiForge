@@ -8,23 +8,13 @@ function configuredSecret() {
   return null;
 }
 
-function secret() {
+/** Prefer explicit secret; otherwise derive from DATABASE_URL; else null (legacy cookies). */
+function signingSecret(): string | null {
   const configured = configuredSecret();
   if (configured) return configured;
-
   const db = process.env.DATABASE_URL?.trim();
-  if (db) {
-    // Temporary fallback so login works before the env var is set on Vercel.
-    console.error(
-      "[session] NEON_AUTH_COOKIE_SECRET missing — using derived secret from DATABASE_URL. Set NEON_AUTH_COOKIE_SECRET in Vercel.",
-    );
-    return createHash("sha256").update(`digiforge-session:${db}`).digest("hex");
-  }
-
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("NEON_AUTH_COOKIE_SECRET is required in production");
-  }
-  return "dev-only-insecure-session-secret";
+  if (!db) return null;
+  return createHash("sha256").update(`digiforge-session:${db}`).digest("hex");
 }
 
 export type SessionPayload = {
@@ -40,30 +30,32 @@ function b64url(buf: Buffer | string) {
   return b.toString("base64url");
 }
 
-function sign(body: string) {
-  return createHmac("sha256", secret()).update(body).digest("base64url");
+function sign(body: string, secret: string) {
+  return createHmac("sha256", secret).update(body).digest("base64url");
 }
 
+/** Signed token when a secret exists; otherwise plain user id (as before). */
 export function createSessionToken(userId: string, sessionVersion: number): string {
+  const secret = signingSecret();
+  if (!secret) return userId;
+
   const payload: SessionPayload = {
     uid: userId,
     v: sessionVersion,
     iat: Math.floor(Date.now() / 1000),
   };
   const body = b64url(JSON.stringify(payload));
-  return `${body}.${sign(body)}`;
+  return `${body}.${sign(body, secret)}`;
 }
 
 export function parseSessionToken(token: string | undefined | null): SessionPayload | null {
   if (!token || !token.includes(".")) return null;
+  const secret = signingSecret();
+  if (!secret) return null;
+
   const [body, sig] = token.split(".");
   if (!body || !sig) return null;
-  let expected: string;
-  try {
-    expected = sign(body);
-  } catch {
-    return null;
-  }
+  const expected = sign(body, secret);
   try {
     const a = Buffer.from(sig);
     const b = Buffer.from(expected);
@@ -75,7 +67,6 @@ export function parseSessionToken(token: string | undefined | null): SessionPayl
     const raw = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as SessionPayload;
     if (!raw?.uid || typeof raw.v !== "number") return null;
     if (!/^u-[\w-]+$/.test(raw.uid)) return null;
-    // 30 day max age
     if (Math.floor(Date.now() / 1000) - raw.iat > 60 * 60 * 24 * 30) return null;
     return raw;
   } catch {
@@ -83,10 +74,9 @@ export function parseSessionToken(token: string | undefined | null): SessionPayl
   }
 }
 
-/** Legacy cookies stored raw user id — accept only in non-production for migration. */
+/** Plain `u-…` cookie — the format that worked before signed sessions. */
 export function parseLegacyUserIdCookie(value: string | undefined | null): string | null {
   if (!value || !/^u-[\w-]+$/.test(value)) return null;
-  if (process.env.NODE_ENV === "production") return null;
   return value;
 }
 
